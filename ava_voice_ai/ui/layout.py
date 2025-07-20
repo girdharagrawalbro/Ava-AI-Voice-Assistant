@@ -61,63 +61,124 @@ class AvaLayout:
     def create_layout(self):
         """Create the main UI layout"""
         
-        # Header
+        # Enhanced Header with modern styling
         header = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Text(
-                        "🤖 Ava AI Assistant",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color=ft.Colors.BLUE_600,
+                    # Enhanced logo section
+                    ft.Row(
+                        controls=[
+                            ft.Container(
+                                content=ft.Text("🤖", size=24),
+                                bgcolor=ft.Colors.BLUE_600,
+                                border_radius=ft.border_radius.all(12),
+                                padding=ft.padding.all(8),
+                                shadow=ft.BoxShadow(
+                                    spread_radius=1,
+                                    blur_radius=6,
+                                    color=ft.Colors.BLUE_200,
+                                    offset=ft.Offset(0, 2),
+                                ),
+                            ),
+                            ft.Column(
+                                controls=[
+                                    ft.Text(
+                                        "Ava AI Assistant",
+                                        size=22,
+                                        weight=ft.FontWeight.BOLD,
+                                        color=ft.Colors.BLUE_800,
+                                    ),
+                                    ft.Text(
+                                        "✨ Your Intelligent Voice Helper",
+                                        size=12,
+                                        color=ft.Colors.BLUE_600,
+                                        italic=True,
+                                    ),
+                                ],
+                                spacing=0,
+                                tight=True,
+                            ),
+                        ],
+                        spacing=12,
+                        alignment=ft.MainAxisAlignment.START,
                     ),
                     ft.Row(
                         controls=[
                             self.volume_button,
                             self.clear_button,
                         ],
-                        spacing=5,
+                        spacing=8,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
-            padding=ft.padding.symmetric(horizontal=20, vertical=10),
-            bgcolor=ft.Colors.BLUE_50,
-            border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.BLUE_200)),
+            padding=ft.padding.symmetric(horizontal=24, vertical=16),
+            bgcolor=ft.Colors.with_opacity(0.95, ft.Colors.WHITE),
+            border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.BLUE_100)),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=8,
+                color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
+                offset=ft.Offset(0, 2),
+            ),
         )
         
-        # Chat area
+        # Enhanced Chat area with gradient background
         chat_container = ft.Container(
             content=self.chat_column,
             expand=True,
-            padding=ft.padding.all(10),
-            bgcolor=ft.Colors.WHITE,
+            padding=ft.padding.all(16),
+            bgcolor=ft.Colors.GREY_50,
+            gradient=ft.LinearGradient(
+                begin=ft.alignment.top_center,
+                end=ft.alignment.bottom_center,
+                colors=[
+                    ft.Colors.WHITE,
+                    ft.Colors.BLUE_50,
+                    ft.Colors.WHITE,
+                ],
+            ),
         )
         
-        # Add welcome message initially
+        # Add enhanced welcome message initially
         self.chat_column.controls.append(WelcomeMessage())
         
-        # Bottom controls
+        # Enhanced Bottom controls with modern styling
         bottom_controls = ft.Container(
             content=ft.Column(
                 controls=[
-                    # Status indicator
+                    # Enhanced Status indicator
                     ft.Container(
                         content=self.status_indicator,
                         alignment=ft.alignment.center,
-                        padding=ft.padding.only(bottom=10),
+                        padding=ft.padding.only(bottom=12),
                     ),
-                    # Microphone button
+                    # Enhanced Microphone button
                     ft.Container(
                         content=self.mic_button,
                         alignment=ft.alignment.center,
-                        padding=ft.padding.only(bottom=20),
+                        padding=ft.padding.only(bottom=24),
                     ),
                 ],
                 spacing=0,
             ),
-            bgcolor=ft.Colors.GREY_50,
-            border=ft.border.only(top=ft.border.BorderSide(1, ft.Colors.GREY_300)),
+            bgcolor=ft.Colors.with_opacity(0.98, ft.Colors.WHITE),
+            border=ft.border.only(top=ft.border.BorderSide(1, ft.Colors.BLUE_100)),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=12,
+                color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+                offset=ft.Offset(0, -2),
+            ),
+            gradient=ft.LinearGradient(
+                begin=ft.alignment.top_center,
+                end=ft.alignment.bottom_center,
+                colors=[
+                    ft.Colors.WHITE,
+                    ft.Colors.BLUE_50,
+                ],
+                stops=[0.0, 1.0],
+            ),
         )
         
         # Main layout

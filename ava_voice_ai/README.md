@@ -1,13 +1,30 @@
 # 🤖 Ava – Conversational Voice AI Desktop App
 
+> **🎉 Now available with modern Electron + TypeScript frontend!**  
+> See `../electron-app/` for the new React-based desktop interface.
+
 A sleek desktop application that combines voice recognition, AI conversation, and natural text-to-speech for an engaging voice assistant experience.
+
+## 🖥️ Choose Your Interface
+
+### 🌟 Modern Electron Frontend (Recommended)
+- **Location**: `../electron-app/`
+- **Technology**: React + TypeScript + Electron
+- **Features**: Modern UI, better performance, professional design
+- **Setup**: See `../electron-app/README.md`
+
+### 🐍 Python Flet Frontend (Legacy)  
+- **Location**: This directory
+- **Technology**: Python + Flet
+- **Features**: Simple setup, Python-native
+- **Usage**: `python main.py`
 
 ## ✨ Features
 
 - 🎙️ **Voice Input**: Advanced speech recognition using SpeechRecognition
 - 🧠 **AI Conversations**: Powered by Google Gemini for intelligent responses  
 - 🔊 **Natural Voice Output**: High-quality text-to-speech using Murf TTS
-- 🪟 **Modern Desktop UI**: Beautiful interface built with Flet
+- 🪟 **Modern Desktop UI**: Beautiful interface (Electron) or Python Flet
 - 💬 **Real-time Chat**: Visual conversation history with timestamps
 - 🔇 **Audio Controls**: Mute/unmute functionality
 - 🧹 **Chat Management**: Clear conversation history
