@@ -1,14 +1,3 @@
-"""
-Ava AI Voice Assistant - FastAPI Backend
-HTTP API endpoints for Electron frontend
-
-Features:
-- Voice input endpoint
-- Gemini AI response endpoint  
-- Murf TTS endpoint
-- Static audio file serving
-"""
-
 import os
 import sys
 from pathlib import Path

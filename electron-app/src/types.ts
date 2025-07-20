@@ -93,10 +93,12 @@ export interface AppState {
   messages: Message[];
   isListening: boolean;
   isSpeaking: boolean;
+  isPaused: boolean;
   isMuted: boolean;
   isDarkMode: boolean;
   status: 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
   currentAudio?: HTMLAudioElement;
+  currentAudioUrl?: string;
 }
 
 export interface ApiEndpoints {

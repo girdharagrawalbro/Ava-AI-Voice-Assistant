@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Pause, Play, Square } from 'lucide-react';
 import type { Message } from '../types';
 import { formatTimestamp, classNames } from '../utils';
 
@@ -8,7 +8,9 @@ interface ChatBubbleProps {
   message: Message;
   onPlayAudio?: (audioUrl: string) => void;
   onStopAudio?: () => void;
+  onPauseResumeAudio?: () => void;
   isAudioPlaying?: boolean;
+  isPaused?: boolean;
   isMuted?: boolean;
 }
 
@@ -16,16 +18,52 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({
   message,
   onPlayAudio,
   onStopAudio,
+  onPauseResumeAudio,
   isAudioPlaying = false,
+  isPaused = false,
   isMuted = false
 }) => {
   const { text, isUser, timestamp, audioUrl } = message;
   const formattedTime = formatTimestamp(timestamp);
 
-  const handleAudioClick = () => {
-    if (isAudioPlaying) {
-      onStopAudio?.();
-    } else if (audioUrl && !isMuted) {
+  const handleAudioClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log('🔊 Audio button clicked:', { 
+      audioUrl, 
+      isAudioPlaying, 
+      isPaused,
+      isMuted,
+      messageId: message.id,
+      isUser: message.isUser 
+    });
+    
+    if (isMuted) {
+      console.log('🔇 Audio is muted, cannot play');
+      return;
+    }
+    
+    if (!audioUrl) {
+      console.log('🔇 No audio URL available for message:', message.id);
+      return;
+    }
+
+    // Validate audio URL
+    if (!audioUrl.startsWith('http://') && !audioUrl.startsWith('https://') && !audioUrl.startsWith('/')) {
+      console.error('🔇 Invalid audio URL format:', audioUrl);
+      return;
+    }
+
+    // Handle different audio states with immediate feedback
+    if (isPaused) {
+      console.log('▶️ Resuming audio playback');
+      onPauseResumeAudio?.();
+    } else if (isAudioPlaying) {
+      console.log('⏸️ Pausing audio playbook');
+      onPauseResumeAudio?.();
+    } else {
+      console.log('▶️ Starting audio playback:', audioUrl);
       onPlayAudio?.(audioUrl);
     }
   };
@@ -86,39 +124,68 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({
             {formattedTime}
           </span>
           
-          {/* Enhanced audio button for AI messages */}
+          {/* Enhanced audio controls for AI messages */}
           {!isUser && audioUrl && (
-            <motion.button
-              whileHover={{ scale: 1.15, rotate: 5 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={handleAudioClick}
-              disabled={isMuted}
-              className={classNames(
-                'flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300',
-                'backdrop-blur-sm border hover:shadow-lg group/btn',
-                isMuted 
-                  ? 'opacity-50 cursor-not-allowed bg-gray-100/50 border-gray-200/50'
-                  : 'hover:shadow-md bg-white/80 dark:bg-slate-700/80 border-gray-200/50 dark:border-slate-600/50',
-                isAudioPlaying && 'animate-pulse bg-blue-100/80 dark:bg-blue-900/30 ring-2 ring-blue-400/30'
-              )}
-              title={isMuted ? 'Audio muted' : (isAudioPlaying ? 'Stop audio' : 'Play audio')}
-            >
-              <motion.div
-                animate={isAudioPlaying ? { rotate: [0, 10, -10, 0] } : {}}
-                transition={{ duration: 0.5, repeat: isAudioPlaying ? Infinity : 0 }}
+            <div className="flex items-center gap-2">
+              {/* Play/Pause Button */}
+              <motion.button
+                whileHover={{ scale: isMuted ? 1 : 1.15, rotate: isMuted ? 0 : 5 }}
+                whileTap={{ scale: isMuted ? 1 : 0.9 }}
+                onClick={handleAudioClick}
+                disabled={isMuted}
+                className={classNames(
+                  'flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200',
+                  'backdrop-blur-sm border hover:shadow-lg group/btn focus:outline-none focus:ring-2',
+                  isMuted 
+                    ? 'opacity-50 cursor-not-allowed bg-gray-100/50 border-gray-200/50 dark:bg-gray-800/50 dark:border-gray-700/50'
+                    : isPaused
+                      ? 'bg-yellow-100/80 border-yellow-300/50 text-yellow-600 hover:bg-yellow-200/80 shadow-yellow-500/20 focus:ring-yellow-500/30 dark:bg-yellow-900/40 dark:border-yellow-600/40 dark:text-yellow-400'
+                      : isAudioPlaying
+                        ? 'bg-purple-100/80 border-purple-300/50 text-purple-600 hover:bg-purple-200/80 shadow-purple-500/20 focus:ring-purple-500/30 dark:bg-purple-900/40 dark:border-purple-600/40 dark:text-purple-400'
+                        : 'bg-blue-100/80 border-blue-300/50 text-blue-600 hover:bg-blue-200/80 shadow-blue-500/20 focus:ring-blue-500/30 dark:bg-blue-900/40 dark:border-blue-600/40 dark:text-blue-400'
+                )}
+                title={
+                  isMuted 
+                    ? "Audio is muted" 
+                    : isPaused
+                      ? "Resume audio"
+                      : isAudioPlaying 
+                        ? "Pause audio" 
+                        : "Play audio"
+                }
               >
                 {isMuted ? (
-                  <VolumeX className="w-3.5 h-3.5 text-gray-400" />
+                  <VolumeX className="w-4 h-4" />
+                ) : isPaused ? (
+                  <Play className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+                ) : isAudioPlaying ? (
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ duration: 0.8, repeat: Infinity }}
+                  >
+                    <Pause className="w-4 h-4" />
+                  </motion.div>
                 ) : (
-                  <Volume2 className={classNames(
-                    "w-3.5 h-3.5 transition-colors group-hover/btn:scale-110",
-                    isAudioPlaying 
-                      ? 'text-blue-600 dark:text-blue-400' 
-                      : 'text-gray-600 dark:text-gray-400 group-hover/btn:text-blue-600'
-                  )} />
+                  <Volume2 className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                 )}
-              </motion.div>
-            </motion.button>
+              </motion.button>
+              
+              {/* Stop Button - only show when audio is playing or paused */}
+              {(isAudioPlaying || isPaused) && (
+                <motion.button
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => onStopAudio?.()}
+                  className="flex items-center justify-center w-6 h-6 rounded-full bg-red-100/80 border border-red-300/50 text-red-600 hover:bg-red-200/80 shadow-red-500/20 transition-all duration-300"
+                  title="Stop audio"
+                >
+                  <Square className="w-3 h-3" />
+                </motion.button>
+              )}
+            </div>
           )}
         </motion.div>
         

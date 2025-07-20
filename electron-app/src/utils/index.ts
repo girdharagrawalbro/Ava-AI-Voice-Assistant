@@ -52,6 +52,22 @@ export const throttle = <T extends (...args: any[]) => any>(
   }) as T;
 };
 
+// Prevent rapid clicking issues
+export const throttleClick = <T extends (...args: any[]) => any>(
+  func: T,
+  delay: number = 300
+): T => {
+  let isThrottled = false;
+  
+  return ((...args: any[]) => {
+    if (isThrottled) return;
+    
+    func(...args);
+    isThrottled = true;
+    setTimeout(() => isThrottled = false, delay);
+  }) as T;
+};
+
 export const classNames = (...classes: (string | undefined | null | false)[]): string => {
   return classes.filter(Boolean).join(' ');
 };
@@ -60,27 +76,130 @@ export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
 };
 
-export const playAudio = async (url: string): Promise<HTMLAudioElement> => {
+export const playAudio = (url: string): Promise<HTMLAudioElement> => {
   return new Promise((resolve, reject) => {
-    const audio = new Audio(url);
-    
-    audio.onloadeddata = () => {
-      audio.play()
-        .then(() => resolve(audio))
-        .catch(reject);
-    };
-    
-    audio.onerror = () => {
-      reject(new Error('Failed to load audio'));
-    };
+    try {
+      console.log('🔊 Creating audio element for:', url);
+      
+      // Clean up any existing audio with the same URL
+      const existingAudios = document.querySelectorAll(`audio[src="${url}"]`);
+      existingAudios.forEach((audioElement) => {
+        const audio = audioElement as HTMLAudioElement;
+        if (!audio.paused) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+      });
+      
+      const audio = new Audio();
+      
+      // Configure audio properties
+      audio.preload = 'auto';
+      audio.volume = 1.0;
+      audio.crossOrigin = 'anonymous';
+      
+      let hasResolved = false;
+      
+      // Faster response with reduced timeout
+      const timeout = setTimeout(() => {
+        if (!hasResolved) {
+          console.error('🔊 Audio loading timeout after 8 seconds');
+          hasResolved = true;
+          reject(new Error('Audio loading timeout'));
+        }
+      }, 8000);
+      
+      // Optimized event handlers for quicker response
+      audio.oncanplay = () => {
+        if (hasResolved) return;
+        console.log('🔊 Audio can play, starting immediately');
+        clearTimeout(timeout);
+        
+        audio.play()
+          .then(() => {
+            console.log('🔊 Audio playback started successfully');
+            hasResolved = true;
+            resolve(audio);
+          })
+          .catch((error) => {
+            console.error('🔊 Audio playback failed:', error);
+            if (!hasResolved) {
+              hasResolved = true;
+              reject(error);
+            }
+          });
+      };
+      
+      audio.onerror = () => {
+        clearTimeout(timeout);
+        console.error('🔊 Audio loading failed');
+        if (!hasResolved) {
+          hasResolved = true;
+          reject(new Error('Audio loading failed'));
+        }
+      };
+      
+      audio.onended = () => {
+        console.log('🔊 Audio playback ended');
+      };
+      
+      // Set the source URL and load
+      console.log('🔊 Setting audio source:', url);
+      audio.src = url;
+      audio.load();
+      
+    } catch (error) {
+      console.error('🔊 Error creating audio element:', error);
+      reject(error);
+    }
   });
 };
 
 export const stopAudio = (audio: HTMLAudioElement): void => {
-  if (audio) {
-    audio.pause();
-    audio.currentTime = 0;
+  try {
+    if (audio && !audio.paused) {
+      console.log('🛑 Stopping audio playback');
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  } catch (error) {
+    console.error('🛑 Error stopping audio:', error);
   }
+};
+
+export const pauseAudio = (audio: HTMLAudioElement): void => {
+  try {
+    if (audio && !audio.paused) {
+      console.log('⏸️ Pausing audio playback');
+      audio.pause();
+    }
+  } catch (error) {
+    console.error('⏸️ Error pausing audio:', error);
+  }
+};
+
+export const resumeAudio = (audio: HTMLAudioElement): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    try {
+      if (audio && audio.paused) {
+        console.log('▶️ Resuming audio playback');
+        audio.play()
+          .then(() => {
+            console.log('▶️ Audio resumed successfully');
+            resolve();
+          })
+          .catch((error) => {
+            console.error('▶️ Error resuming audio:', error);
+            reject(error);
+          });
+      } else {
+        resolve();
+      }
+    } catch (error) {
+      console.error('▶️ Error resuming audio:', error);
+      reject(error);
+    }
+  });
 };
 
 export const getStatusColor = (status: string): string => {

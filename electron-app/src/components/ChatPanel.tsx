@@ -8,11 +8,14 @@ interface ChatPanelProps {
   isOpen: boolean;
   messages: Message[];
   onClose: () => void;
-  onClearHistory?: () => void;
+  onClearHistory: () => void;
   onPlayAudio?: (audioUrl: string) => void;
   onStopAudio?: () => void;
+  onPauseResumeAudio?: () => void;
   isAudioPlaying?: boolean;
+  isPaused?: boolean;
   isMuted?: boolean;
+  currentAudioUrl?: string;
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -22,8 +25,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   onClearHistory,
   onPlayAudio,
   onStopAudio,
+  onPauseResumeAudio,
   isAudioPlaying = false,
-  isMuted = false
+  isPaused = false,
+  isMuted = false,
+  currentAudioUrl
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -134,7 +140,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           message={message}
                           onPlayAudio={onPlayAudio}
                           onStopAudio={onStopAudio}
-                          isAudioPlaying={isAudioPlaying}
+                          onPauseResumeAudio={onPauseResumeAudio}
+                          isAudioPlaying={isAudioPlaying && currentAudioUrl === message.audioUrl}
+                          isPaused={isPaused && currentAudioUrl === message.audioUrl}
                           isMuted={isMuted}
                         />
                       </motion.div>

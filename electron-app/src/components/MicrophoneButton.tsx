@@ -97,11 +97,11 @@ const MicrophoneButton: React.FC<MicrophoneButtonProps> = ({
       {/* Main button with enhanced design */}
       <motion.button
         whileHover={{ scale: isDisabled ? 1 : 1.1 }}
-        whileTap={{ scale: isDisabled ? 1 : 0.9 }}
+        whileTap={{ scale: isDisabled ? 1 : 0.95 }}
         onClick={handleClick}
         disabled={isDisabled}
         className={classNames(
-          'relative w-28 h-28 rounded-full transition-all duration-300 focus:outline-none focus:ring-4',
+          'relative w-28 h-28 rounded-full transition-all duration-200 focus:outline-none focus:ring-4',
           'shadow-2xl backdrop-blur-sm border-2 overflow-hidden',
           'before:absolute before:inset-0 before:rounded-full before:bg-gradient-to-br before:from-white/10 before:to-transparent before:z-10',
           isListening

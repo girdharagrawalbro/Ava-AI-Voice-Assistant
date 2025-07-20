@@ -7,3 +7,9 @@ python-dotenv>=1.0.0
 audioplayer>=0.6
 pyttsx3>=2.90
 murf
+
+# FastAPI requirements for Ava AI Voice Assistant API
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+python-multipart>=0.0.6

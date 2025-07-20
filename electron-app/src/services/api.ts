@@ -116,7 +116,11 @@ class APIService {
   }
 
   getAudioUrl(filename: string): string {
-    return `${this.baseURL}/audio/${filename}`;
+    // Ensure we have a proper filename
+    const cleanFilename = filename.startsWith('/') ? filename.slice(1) : filename;
+    const audioUrl = `${this.baseURL}/audio/${cleanFilename}`;
+    console.log('🔊 Generated audio URL:', audioUrl);
+    return audioUrl;
   }
 
   async downloadAudio(url: string): Promise<Blob> {
