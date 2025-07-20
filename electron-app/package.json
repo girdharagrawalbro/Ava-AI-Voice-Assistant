@@ -16,6 +16,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "preview": "vite preview",
     "electron": "electron .",
+    "start": "electron .",
     "electron:dev": "electron . --dev",
     "dist": "npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps"

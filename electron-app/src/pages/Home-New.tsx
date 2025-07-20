@@ -470,7 +470,7 @@ const Home: React.FC = () => {
           </AnimatePresence>
 
           {/* Status Indicator */}
-          <div className="mb-8">
+          <div className="mb-4 mt-2">
             <StatusIndicator 
               status={appState.status}
             />
@@ -478,7 +478,7 @@ const Home: React.FC = () => {
 
           {/* Microphone Button */}
           <motion.div 
-            className="mb-12"
+            className="mb-12 w-36"
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ 
