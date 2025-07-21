@@ -284,7 +284,10 @@ export const storage = {
 export const STORAGE_KEYS = {
   THEME: 'ava_theme',
   MESSAGES: 'ava_messages',
-  SETTINGS: 'ava_settings'
+  SETTINGS: 'ava_settings',
+  MEDICATIONS: 'ava_medications',
+  REMINDERS: 'ava_reminders',
+  HEALTH_TIPS: 'ava_health_tips'
 };
 
 export const THEMES = {
