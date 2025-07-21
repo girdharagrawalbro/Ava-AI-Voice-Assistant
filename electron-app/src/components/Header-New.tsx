@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Moon, Sun, Volume2, VolumeX, MessageCircle, Sparkles } from 'lucide-react';
+import { Settings, Moon, Sun, Volume2, VolumeX, MessageCircle, Sparkles, Home } from 'lucide-react';
 import SettingsModal from './SettingsModal';
 import { classNames } from '../utils';
 
@@ -11,6 +11,7 @@ interface HeaderProps {
   onToggleDarkMode: () => void;
   onToggleMute: () => void;
   onToggleChatPanel: () => void;
+  onNavigateHome?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -19,20 +20,21 @@ const Header: React.FC<HeaderProps> = ({
   showChatPanel,
   onToggleDarkMode,
   onToggleMute,
-  onToggleChatPanel
+  onToggleChatPanel,
+  onNavigateHome
 }) => {
   const [showSettings, setShowSettings] = useState(false);
 
   return (
     <>
-      <motion.header 
+      <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="header flex items-center justify-between p-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-gray-200/50 dark:border-slate-700/50 relative z-10 shadow-lg"
       >
         {/* Enhanced Logo and Branding */}
-        <motion.div 
+        <motion.div
           className="flex items-center space-x-4"
           whileHover={{ scale: 1.02 }}
           transition={{ type: "spring", stiffness: 400 }}
@@ -59,9 +61,9 @@ const Header: React.FC<HeaderProps> = ({
             {/* Glow effect */}
             <div className="absolute -inset-2 bg-gradient-to-br from-blue-500/20 to-purple-600/20 rounded-3xl blur-md animate-pulse" />
           </div>
-          
+
           <div className="flex flex-col">
-            <motion.h1 
+            <motion.h1
               className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 dark:from-blue-400 dark:via-purple-400 dark:to-indigo-400 bg-clip-text text-transparent"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -69,7 +71,7 @@ const Header: React.FC<HeaderProps> = ({
             >
               Ava AI
             </motion.h1>
-            <motion.p 
+            <motion.p
               className="text-sm text-gray-500 dark:text-gray-400 -mt-1 font-medium"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -82,6 +84,20 @@ const Header: React.FC<HeaderProps> = ({
 
         {/* Enhanced Controls */}
         <div className="flex items-center space-x-3">
+          {/* Home Button */}
+          {onNavigateHome && (
+            <motion.button
+              whileHover={{ scale: 1.1, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onNavigateHome}
+              className="relative p-3 rounded-2xl transition-all duration-300 group backdrop-blur-sm border shadow-lg hover:shadow-xl bg-white/80 dark:bg-slate-800/80 text-gray-600 dark:text-gray-400 border-gray-200/50 dark:border-slate-700/50 hover:bg-gray-50/80 dark:hover:bg-slate-700/80"
+              title="Go to Home"
+            >
+              <Home className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-green-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </motion.button>
+          )}
+
           {/* Chat Panel Toggle */}
           <motion.button
             whileHover={{ scale: 1.1, y: -2 }}
@@ -90,7 +106,7 @@ const Header: React.FC<HeaderProps> = ({
             className={classNames(
               "relative p-3 rounded-2xl transition-all duration-300 group",
               "backdrop-blur-sm border shadow-lg hover:shadow-xl",
-              showChatPanel 
+              showChatPanel
                 ? "bg-blue-100/80 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border-blue-200/50 dark:border-blue-700/50"
                 : "bg-white/80 dark:bg-slate-800/80 text-gray-600 dark:text-gray-400 border-gray-200/50 dark:border-slate-700/50 hover:bg-gray-50/80 dark:hover:bg-slate-700/80"
             )}
@@ -117,8 +133,8 @@ const Header: React.FC<HeaderProps> = ({
             className={classNames(
               "relative p-3 rounded-2xl transition-all duration-300 group",
               "backdrop-blur-sm border shadow-lg hover:shadow-xl",
-              isMuted 
-                ? "bg-red-100/80 dark:bg-red-900/40 text-red-600 dark:text-red-400 border-red-200/50 dark:border-red-700/50" 
+              isMuted
+                ? "bg-red-100/80 dark:bg-red-900/40 text-red-600 dark:text-red-400 border-red-200/50 dark:border-red-700/50"
                 : "bg-white/80 dark:bg-slate-800/80 text-gray-600 dark:text-gray-400 border-gray-200/50 dark:border-slate-700/50 hover:bg-gray-50/80 dark:hover:bg-slate-700/80"
             )}
             title={isMuted ? "Unmute Audio" : "Mute Audio"}

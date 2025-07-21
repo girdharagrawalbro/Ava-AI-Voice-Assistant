@@ -49,7 +49,7 @@ const Home: React.FC = () => {
     { name: 'Emergency Services', number: '911' },
     { name: 'Family Contact', number: '555-0202' }
   ]);
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const isProcessingRef = useRef<boolean>(false);
 
@@ -100,8 +100,8 @@ const Home: React.FC = () => {
       updateState({ status: 'processing' });
 
       // Check for medication queries
-      if (userText.toLowerCase().includes('what is my next medicine') || 
-          userText.toLowerCase().includes('what medicine do i take next')) {
+      if (userText.toLowerCase().includes('what is my next medicine') ||
+        userText.toLowerCase().includes('what medicine do i take next')) {
         const nextMed = getNextMedication();
         if (nextMed) {
           const response = `Your next medication is ${nextMed.name}, ${nextMed.dosage} at ${nextMed.time}.`;
@@ -112,9 +112,9 @@ const Home: React.FC = () => {
       }
 
       // Check for symptom queries
-      if (userText.toLowerCase().includes('i have') || 
-          userText.toLowerCase().includes('i feel') ||
-          userText.toLowerCase().includes('symptom')) {
+      if (userText.toLowerCase().includes('i have') ||
+        userText.toLowerCase().includes('i feel') ||
+        userText.toLowerCase().includes('symptom')) {
         const response = await apiService.getGeminiResponse({ text: userText });
         const aiMessage = addMessage(response.response, false);
         if (!appState.isMuted) await generateSpeech(response.response, aiMessage.id);
@@ -205,7 +205,7 @@ const Home: React.FC = () => {
       if (response.audio_url) {
         setAppState(prev => ({
           ...prev,
-          messages: prev.messages.map(msg => 
+          messages: prev.messages.map(msg =>
             msg.id === messageId ? { ...msg, audioUrl: response.audio_url } : msg
           )
         }));
@@ -381,22 +381,22 @@ const Home: React.FC = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar Navigation */}
         <nav className="flex md:flex-col items-center justify-around md:justify-start gap-1 p-2 bg-white/70 dark:bg-slate-900/70 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 z-10">
-          <button 
-            onClick={() => setActiveTab('medications')} 
+          <button
+            onClick={() => setActiveTab('medications')}
             className={`p-3 rounded-lg transition-all ${activeTab === 'medications' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
             title="Medications"
           >
             <Pill size={20} />
           </button>
-          <button 
-            onClick={() => setActiveTab('health')} 
+          <button
+            onClick={() => setActiveTab('health')}
             className={`p-3 rounded-lg transition-all ${activeTab === 'health' ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
             title="Health Monitoring"
           >
             <HeartPulse size={20} />
           </button>
-          <button 
-            onClick={() => setActiveTab('chat')} 
+          <button
+            onClick={() => setActiveTab('chat')}
             className={`p-3 rounded-lg transition-all ${activeTab === 'chat' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
             title="Chat with Ava"
           >
@@ -407,7 +407,7 @@ const Home: React.FC = () => {
         {/* Medications Panel */}
         <AnimatePresence>
           {activeTab === 'medications' && (
-            <motion.section 
+            <motion.section
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -416,7 +416,7 @@ const Home: React.FC = () => {
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-300">Medication Management</h2>
-                <button 
+                <button
                   onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement | null)?.showModal()}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-full shadow hover:bg-blue-600 transition-all"
                 >
@@ -432,7 +432,7 @@ const Home: React.FC = () => {
                 {appState.medications.length > 0 ? (
                   <ul className="space-y-3">
                     {appState.medications.map((med, index) => (
-                      <motion.li 
+                      <motion.li
                         key={med.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -481,7 +481,7 @@ const Home: React.FC = () => {
         {/* Health Monitoring Panel */}
         <AnimatePresence>
           {activeTab === 'health' && (
-            <motion.section 
+            <motion.section
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -541,7 +541,7 @@ const Home: React.FC = () => {
         {/* Chat Panel */}
         <AnimatePresence>
           {activeTab === 'chat' && (
-            <motion.section 
+            <motion.section
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -549,21 +549,21 @@ const Home: React.FC = () => {
               className="flex-1 flex flex-col p-6 overflow-hidden"
             >
               <h2 className="text-xl font-semibold text-green-700 dark:text-green-300 mb-6">Chat with Ava</h2>
-              
+
               {/* Chat Messages */}
               <div className="flex-1 overflow-y-auto mb-6 custom-scrollbar">
                 <div className="space-y-4">
                   {appState.messages.length > 0 ? (
                     appState.messages.map((message, index) => (
-                      <motion.div 
+                      <motion.div
                         key={message.id}
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         transition={{ type: "spring", stiffness: 400, damping: 25, delay: index * 0.05 }}
                         className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
                       >
-                        <motion.div 
-                          whileHover={{ scale: 1.02, y: -2 }} 
+                        <motion.div
+                          whileHover={{ scale: 1.02, y: -2 }}
                           className={`max-w-[80%] rounded-2xl px-6 py-4 shadow-lg backdrop-blur-sm border transition-all ${message.isUser ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30' : 'bg-white/95 dark:bg-slate-800/95 text-gray-800 dark:text-gray-200 border-gray-200/50 dark:border-slate-700/50'}`}
                         >
                           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
@@ -573,9 +573,9 @@ const Home: React.FC = () => {
                             </span>
                             {!message.isUser && message.audioUrl && !appState.isMuted && (
                               <div className="flex items-center gap-2">
-                                <motion.button 
-                                  whileHover={{ scale: 1.15 }} 
-                                  whileTap={{ scale: 0.9 }} 
+                                <motion.button
+                                  whileHover={{ scale: 1.15 }}
+                                  whileTap={{ scale: 0.9 }}
                                   onClick={() => {
                                     const isCurrentMessage = appState.currentAudioUrl === message.audioUrl;
                                     if (appState.isPaused && isCurrentMessage) {
@@ -585,16 +585,15 @@ const Home: React.FC = () => {
                                     } else {
                                       handlePlayAudio(message.audioUrl!);
                                     }
-                                  }} 
-                                  className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${
-                                    appState.currentAudioUrl === message.audioUrl && appState.isPaused ? 'bg-yellow-500 hover:bg-yellow-600' : 
-                                    appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? 'bg-purple-500 hover:bg-purple-600' : 
-                                    'bg-blue-500 hover:bg-blue-600'
-                                  }`} 
+                                  }}
+                                  className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${appState.currentAudioUrl === message.audioUrl && appState.isPaused ? 'bg-yellow-500 hover:bg-yellow-600' :
+                                    appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? 'bg-purple-500 hover:bg-purple-600' :
+                                      'bg-blue-500 hover:bg-blue-600'
+                                    }`}
                                   title={
-                                    appState.currentAudioUrl === message.audioUrl && appState.isPaused ? "Resume audio" : 
-                                    appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? "Pause audio" : 
-                                    "Play audio response"
+                                    appState.currentAudioUrl === message.audioUrl && appState.isPaused ? "Resume audio" :
+                                      appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? "Pause audio" :
+                                        "Play audio response"
                                   }
                                 >
                                   {appState.currentAudioUrl === message.audioUrl && appState.isPaused ? (
@@ -608,14 +607,14 @@ const Home: React.FC = () => {
                                   )}
                                 </motion.button>
                                 {appState.currentAudioUrl === message.audioUrl && (appState.isSpeaking || appState.isPaused) && (
-                                  <motion.button 
-                                    initial={{ scale: 0, opacity: 0 }} 
-                                    animate={{ scale: 1, opacity: 1 }} 
-                                    exit={{ scale: 0, opacity: 0 }} 
-                                    whileHover={{ scale: 1.1 }} 
-                                    whileTap={{ scale: 0.9 }} 
-                                    onClick={handleStopAudio} 
-                                    className="p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg hover:shadow-xl" 
+                                  <motion.button
+                                    initial={{ scale: 0, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={{ scale: 0, opacity: 0 }}
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={handleStopAudio}
+                                    className="p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg hover:shadow-xl"
                                     title="Stop audio"
                                   >
                                     <Square className="w-3 h-3" />
