@@ -1,6 +1,6 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import HomePage from './pages/HomePage';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import HomePage from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import './styles/global.css';
 

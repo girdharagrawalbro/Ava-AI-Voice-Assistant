@@ -82,44 +82,44 @@ const Dashboard: React.FC = () => {
     try {
       console.log('🎤 Starting voice recognition...');
       updateState({ isListening: true, status: 'listening' });
-      
+
       // Cancel any previous request
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      
+
       abortControllerRef.current = new AbortController();
-      
+
       // Use new API service method
-      const response = await apiService.startVoiceRecognition({ 
-        timeout: 10, 
-        phrase_time_limit: 15 
+      const response = await apiService.startVoiceRecognition({
+        timeout: 10,
+        phrase_time_limit: 15
       });
-      
+
       console.log('🎤 Voice recognition response:', response);
-      
+
       if (response.text && response.text.trim()) {
         // Add user message
         addMessage(response.text, true);
-        
+
         // Get AI response
         await getAIResponse(response.text);
       } else {
         console.log('🎤 No speech detected or empty response');
         addMessage('No speech detected. Please try again.', false);
       }
-      
+
     } catch (error: any) {
       console.error('🎤 Voice input error:', error);
       updateState({ status: 'error' });
-      
+
       if (!error.message?.includes('aborted')) {
-        const errorMessage = error.message?.includes('Network error') 
+        const errorMessage = error.message?.includes('Network error')
           ? 'Cannot connect to voice service. Please check if the backend is running.'
           : error.message?.includes('timeout') || error.message?.includes('TIMEOUT')
-          ? 'Voice recognition timed out. Please try again.'
-          : `Voice recognition error: ${error.message}`;
-        
+            ? 'Voice recognition timed out. Please try again.'
+            : `Voice recognition error: ${error.message}`;
+
         addMessage(errorMessage, false);
       }
     } finally {
@@ -139,7 +139,7 @@ const Dashboard: React.FC = () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      
+
       await apiService.stopVoiceRecognition();
     } catch (error) {
       console.error('Stop listening error:', error);
@@ -152,21 +152,21 @@ const Dashboard: React.FC = () => {
   const getAIResponse = useCallback(async (userText: string) => {
     try {
       updateState({ status: 'processing' });
-      
+
       const response = await apiService.getGeminiResponse({ text: userText });
-      
+
       const aiMessage = addMessage(response.response, false);
-      
+
       // Generate speech for AI response
       if (!appState.isMuted) {
         await generateSpeech(response.response, aiMessage.id);
       }
-      
+
     } catch (error: any) {
       console.error('AI response error:', error);
       addMessage(`AI Error: ${error.message}`, false);
       updateState({ status: 'error' });
-      
+
       setTimeout(() => updateState({ status: 'idle' }), 2000);
     }
   }, [addMessage, appState.isMuted, updateState]);
@@ -176,17 +176,17 @@ const Dashboard: React.FC = () => {
     try {
       console.log('🎵 Generating speech for text:', text);
       updateState({ status: 'speaking', isSpeaking: true });
-      
-      const response = await apiService.generateSpeech({ 
-        text, 
-        voice_id: 'en-US-terrell' 
+
+      const response = await apiService.generateSpeech({
+        text,
+        voice_id: 'en-US-terrell'
       });
-      
+
       console.log('🎵 Speech generation response:', response);
-      
+
       if (response.audio_url || response.audio_path || response.filename) {
         let audioUrl = '';
-        
+
         if (response.audio_url) {
           audioUrl = response.audio_url;
         } else if (response.filename) {
@@ -194,29 +194,29 @@ const Dashboard: React.FC = () => {
         } else if (response.audio_path) {
           audioUrl = apiService.getAudioUrl(response.audio_path);
         }
-        
+
         console.log('🎵 Final audio URL:', audioUrl);
-        
+
         // Update message with audio URL
         setAppState((prev: AppState) => ({
           ...prev,
-          messages: prev.messages.map((msg: Message) => 
+          messages: prev.messages.map((msg: Message) =>
             msg.id === messageId ? { ...msg, audioUrl } : msg
           )
         }));
-        
+
         // Play audio automatically if we have a URL and not muted
         if (audioUrl && !appState.isMuted) {
           try {
             console.log('🎵 Playing audio:', audioUrl);
             const audio = await playAudio(audioUrl);
             updateState({ currentAudio: audio, currentAudioUrl: audioUrl });
-            
+
             audio.onended = () => {
               console.log('🎵 Audio playback ended');
               updateState({ isSpeaking: false, status: 'idle', currentAudio: undefined, currentAudioUrl: undefined, isPaused: false });
             };
-            
+
             audio.onerror = (error) => {
               console.error('🎵 Audio playback error:', error);
               updateState({ isSpeaking: false, status: 'idle', currentAudio: undefined, currentAudioUrl: undefined, isPaused: false });
@@ -246,15 +246,15 @@ const Dashboard: React.FC = () => {
   // Handle audio playbook with immediate UI feedback
   const handlePlayAudio = useCallback(async (audioUrl: string) => {
     if (isProcessingRef.current) return;
-    
+
     try {
       console.log('🔊 Manual audio play requested:', audioUrl);
-      
+
       if (appState.isMuted) {
         console.log('🔇 Audio is muted, cannot play');
         return;
       }
-      
+
       // Validate audio URL
       if (!audioUrl || typeof audioUrl !== 'string') {
         console.error('🔇 Invalid audio URL:', audioUrl);
@@ -267,21 +267,21 @@ const Dashboard: React.FC = () => {
         fullAudioUrl = `http://127.0.0.1:8000${audioUrl}`;
         console.log('🔊 Converted to full URL:', fullAudioUrl);
       }
-      
+
       if (appState.currentAudio) {
         console.log('🔊 Stopping current audio');
         stopAudio(appState.currentAudio);
       }
-      
+
       console.log('🔊 Playing audio:', fullAudioUrl);
       const audio = await playAudio(fullAudioUrl);
       updateState({ currentAudio: audio, isSpeaking: true, currentAudioUrl: fullAudioUrl });
-      
+
       audio.onended = () => {
         console.log('🔊 Manual audio playback ended');
         updateState({ currentAudio: undefined, isSpeaking: false, currentAudioUrl: undefined, isPaused: false });
       };
-      
+
       audio.onerror = (error) => {
         console.error('🔊 Manual audio playback error:', error);
         updateState({ currentAudio: undefined, isSpeaking: false, currentAudioUrl: undefined, isPaused: false });
@@ -289,7 +289,7 @@ const Dashboard: React.FC = () => {
     } catch (error: any) {
       console.error('🔊 Manual audio playback failed:', error);
       updateState({ currentAudio: undefined, isSpeaking: false, currentAudioUrl: undefined, isPaused: false });
-      
+
       // Show user-friendly error message
       if (error.message?.includes('timeout')) {
         console.warn('🔊 Audio loading timed out - the audio file might be too large or the server is slow');
@@ -334,7 +334,7 @@ const Dashboard: React.FC = () => {
   // Separate pause handler for VoiceInterface with immediate UI feedback
   const handlePauseAudio = useCallback(() => {
     if (!appState.currentAudio || appState.isPaused || isProcessingRef.current) return;
-    
+
     try {
       console.log('⏸️ Pausing audio playback');
       // Update UI immediately
@@ -366,11 +366,11 @@ const Dashboard: React.FC = () => {
     const newMuted = !appState.isMuted;
     console.log('🔇 Toggling mute:', newMuted);
     updateState({ isMuted: newMuted });
-    
+
     // Save setting
     const settings = storage.get(STORAGE_KEYS.SETTINGS) || {};
     storage.set(STORAGE_KEYS.SETTINGS, { ...settings, isMuted: newMuted });
-    
+
     // Stop current audio if muting
     if (newMuted && appState.currentAudio) {
       handleStopAudio();
@@ -389,7 +389,7 @@ const Dashboard: React.FC = () => {
   const handleToggleTheme = useCallback(() => {
     const newTheme = appState.isDarkMode ? THEMES.LIGHT : THEMES.DARK;
     updateState({ isDarkMode: !appState.isDarkMode });
-    
+
     document.documentElement.setAttribute('data-theme', newTheme);
     storage.set(STORAGE_KEYS.THEME, newTheme);
   }, [appState.isDarkMode, updateState]);
@@ -423,7 +423,7 @@ const Dashboard: React.FC = () => {
         {/* Animated gradient orbs */}
         <motion.div
           className="absolute top-20 right-20 w-96 h-96 bg-gradient-to-br from-blue-500/20 via-purple-500/15 to-indigo-500/20 rounded-full blur-3xl"
-          animate={{ 
+          animate={{
             scale: [1, 1.3, 1.1, 1.4, 1],
             opacity: [0.3, 0.6, 0.4, 0.7, 0.3],
             rotate: [0, 90, 180, 270, 360]
@@ -432,7 +432,7 @@ const Dashboard: React.FC = () => {
         />
         <motion.div
           className="absolute bottom-20 left-20 w-80 h-80 bg-gradient-to-br from-indigo-500/15 via-pink-500/10 to-purple-500/15 rounded-full blur-3xl"
-          animate={{ 
+          animate={{
             scale: [1.2, 1, 1.3, 1.1, 1.2],
             opacity: [0.2, 0.5, 0.3, 0.6, 0.2],
             rotate: [360, 270, 180, 90, 0]
@@ -441,13 +441,13 @@ const Dashboard: React.FC = () => {
         />
         <motion.div
           className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-gradient-to-br from-cyan-500/10 via-blue-500/15 to-indigo-500/10 rounded-full blur-3xl"
-          animate={{ 
+          animate={{
             scale: [1, 1.5, 1.2, 1.6, 1],
             opacity: [0.1, 0.3, 0.2, 0.4, 0.1]
           }}
           transition={{ duration: 15, repeat: Infinity }}
         />
-        
+
         {/* Floating particles */}
         {Array.from({ length: 20 }).map((_, i) => (
           <motion.div
@@ -463,14 +463,14 @@ const Dashboard: React.FC = () => {
               opacity: [0.2, 0.8, 0.3, 0.7, 0.2],
               scale: [1, 1.5, 1, 2, 1]
             }}
-            transition={{ 
-              duration: 5 + Math.random() * 3, 
+            transition={{
+              duration: 5 + Math.random() * 3,
               repeat: Infinity,
               delay: Math.random() * 2
             }}
           />
         ))}
-        
+
         {/* Grid pattern overlay */}
         <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]">
           <div className="h-full w-full" style={{
@@ -494,7 +494,7 @@ const Dashboard: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 relative overflow-hidden">
         {/* Central Interface */}
-        <motion.div 
+        <motion.div
           className="flex flex-col items-center justify-center h-full px-8 relative z-10"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -565,21 +565,21 @@ const Dashboard: React.FC = () => {
 
           {/* Status Indicator */}
           <div className="mb-4 mt-2">
-            <StatusIndicator 
+            <StatusIndicator
               status={appState.status}
             />
           </div>
 
           {/* Voice Interface */}
-          <motion.div 
+          <motion.div
             className="mb-12 w-36"
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ 
-              type: "spring", 
-              stiffness: 200, 
-              damping: 20, 
-              delay: 0.5 
+            transition={{
+              type: "spring",
+              stiffness: 200,
+              damping: 20,
+              delay: 0.5
             }}
           >
             <VoiceInterface
@@ -615,7 +615,7 @@ const Dashboard: React.FC = () => {
                       key={message.id}
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ 
+                      transition={{
                         type: "spring",
                         stiffness: 400,
                         damping: 25,
@@ -623,12 +623,12 @@ const Dashboard: React.FC = () => {
                       }}
                       className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
                     >
-                      <motion.div 
+                      <motion.div
                         whileHover={{ scale: 1.02, y: -2 }}
                         className={`
                           max-w-[70%] rounded-2xl px-6 py-4 shadow-lg backdrop-blur-sm border transition-all
-                          ${message.isUser 
-                            ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30' 
+                          ${message.isUser
+                            ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30'
                             : 'bg-white/95 dark:bg-slate-800/95 text-gray-800 dark:text-gray-200 border-gray-200/50 dark:border-slate-700/50'
                           }
                         `}
@@ -637,12 +637,11 @@ const Dashboard: React.FC = () => {
                           {message.text}
                         </p>
                         <div className="flex items-center justify-between mt-3 gap-3">
-                          <span className={`text-xs opacity-75 font-medium ${
-                            message.isUser ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-                          }`}>
-                            {new Date(message.timestamp).toLocaleTimeString([], { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
+                          <span className={`text-xs opacity-75 font-medium ${message.isUser ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                            }`}>
+                            {new Date(message.timestamp).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
                             })}
                           </span>
                           {!message.isUser && message.audioUrl && !appState.isMuted && (
@@ -661,18 +660,17 @@ const Dashboard: React.FC = () => {
                                     handlePlayAudio(message.audioUrl!);
                                   }
                                 }}
-                                className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${
-                                  appState.currentAudioUrl === message.audioUrl && appState.isPaused
-                                    ? 'bg-yellow-500 hover:bg-yellow-600'
-                                    : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking
-                                      ? 'bg-purple-500 hover:bg-purple-600'
-                                      : 'bg-blue-500 hover:bg-blue-600'
-                                }`}
+                                className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${appState.currentAudioUrl === message.audioUrl && appState.isPaused
+                                  ? 'bg-yellow-500 hover:bg-yellow-600'
+                                  : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking
+                                    ? 'bg-purple-500 hover:bg-purple-600'
+                                    : 'bg-blue-500 hover:bg-blue-600'
+                                  }`}
                                 title={
                                   appState.currentAudioUrl === message.audioUrl && appState.isPaused
                                     ? "Resume audio"
                                     : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking
-                                      ? "Pause audio" 
+                                      ? "Pause audio"
                                       : "Play audio response"
                                 }
                               >
@@ -689,7 +687,7 @@ const Dashboard: React.FC = () => {
                                   <Volume2 className="w-4 h-4" />
                                 )}
                               </motion.button>
-                              
+
                               {/* Stop Button - only show when audio is playing or paused from this message */}
                               {appState.currentAudioUrl === message.audioUrl && (appState.isSpeaking || appState.isPaused) && (
                                 <motion.button
@@ -712,7 +710,7 @@ const Dashboard: React.FC = () => {
                     </motion.div>
                   ))}
                 </div>
-                
+
                 {/* Show more messages indicator */}
                 {appState.messages.length > 3 && (
                   <motion.div
@@ -750,7 +748,7 @@ const Dashboard: React.FC = () => {
                 <p className="text-gray-600 dark:text-gray-400 mb-8 leading-relaxed text-lg">
                   Your intelligent voice assistant. Click the microphone to start a conversation, or ask me anything!
                 </p>
-                
+
                 {/* Quick action suggestions */}
                 <div className="space-y-3">
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 font-medium">Try saying:</p>

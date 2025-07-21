@@ -21,7 +21,7 @@ export interface Message {
   id: string;
   text: string;
   isUser: boolean;
-  timestamp: Date;
+  timestamp: number;
   audioUrl?: string;
 }
 
@@ -96,9 +96,12 @@ export interface AppState {
   isPaused: boolean;
   isMuted: boolean;
   isDarkMode: boolean;
+  medications: Medication[];
+  reminders: any[];
   status: 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
   currentAudio?: HTMLAudioElement;
   currentAudioUrl?: string;
+  healthTips: string[];
 }
 
 export interface ApiEndpoints {
@@ -121,6 +124,21 @@ export interface Versions {
   node: string;
   chrome: string;
   electron: string;
+}
+
+
+export interface Medication {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  time: string;
+}
+
+
+export interface SymptomCheck {
+  symptoms: string;
+  result: string;
 }
 
 declare global {
