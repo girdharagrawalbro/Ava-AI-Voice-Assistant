@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, Pause, Play, Square } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Volume2, Pause, Play, Square, Home, ArrowLeft } from 'lucide-react';
 import Header from '../components/Header-New';
 import VoiceInterface from '../components/VoiceInterface';
 import ChatPanel from '../components/ChatPanel';
@@ -9,7 +10,7 @@ import { apiService } from '../services/api';
 import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
 import type { Message, AppState } from '../types';
 
-const Home: React.FC = () => {
+const Dashboard: React.FC = () => {
   const [appState, setAppState] = useState<AppState>({
     messages: [],
     isListening: false,
@@ -24,6 +25,7 @@ const Home: React.FC = () => {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isProcessingRef = useRef<boolean>(false);
+  const navigate = useNavigate();
 
   // Load saved data on mount
   useEffect(() => {
@@ -397,6 +399,11 @@ const Home: React.FC = () => {
     setShowChatPanel(prev => !prev);
   }, []);
 
+  // Navigate to home
+  const handleNavigateHome = useCallback(() => {
+    navigate('/');
+  }, [navigate]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -481,6 +488,7 @@ const Home: React.FC = () => {
         onToggleDarkMode={handleToggleTheme}
         onToggleMute={handleToggleMute}
         onToggleChatPanel={handleToggleChatPanel}
+        onNavigateHome={handleNavigateHome}
       />
 
       {/* Main Content */}
@@ -799,4 +807,4 @@ const Home: React.FC = () => {
   );
 };
 
-export default Home;
+export default Dashboard;

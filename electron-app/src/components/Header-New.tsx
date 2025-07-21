@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Moon, Sun, Volume2, VolumeX, MessageCircle, Sparkles } from 'lucide-react';
+import { Settings, Moon, Sun, Volume2, VolumeX, MessageCircle, Sparkles, Home } from 'lucide-react';
 import SettingsModal from './SettingsModal';
 import { classNames } from '../utils';
 
@@ -11,6 +11,7 @@ interface HeaderProps {
   onToggleDarkMode: () => void;
   onToggleMute: () => void;
   onToggleChatPanel: () => void;
+  onNavigateHome?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -19,7 +20,8 @@ const Header: React.FC<HeaderProps> = ({
   showChatPanel,
   onToggleDarkMode,
   onToggleMute,
-  onToggleChatPanel
+  onToggleChatPanel,
+  onNavigateHome
 }) => {
   const [showSettings, setShowSettings] = useState(false);
 
@@ -82,6 +84,20 @@ const Header: React.FC<HeaderProps> = ({
 
         {/* Enhanced Controls */}
         <div className="flex items-center space-x-3">
+          {/* Home Button */}
+          {onNavigateHome && (
+            <motion.button
+              whileHover={{ scale: 1.1, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onNavigateHome}
+              className="relative p-3 rounded-2xl transition-all duration-300 group backdrop-blur-sm border shadow-lg hover:shadow-xl bg-white/80 dark:bg-slate-800/80 text-gray-600 dark:text-gray-400 border-gray-200/50 dark:border-slate-700/50 hover:bg-gray-50/80 dark:hover:bg-slate-700/80"
+              title="Go to Home"
+            >
+              <Home className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-green-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </motion.button>
+          )}
+
           {/* Chat Panel Toggle */}
           <motion.button
             whileHover={{ scale: 1.1, y: -2 }}
