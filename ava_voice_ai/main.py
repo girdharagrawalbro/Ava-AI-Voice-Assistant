@@ -1,122 +1,639 @@
-# import flet as ft
-# import sys
-# import os
-# from pathlib import Path
+import os
+import sys
+from pathlib import Path
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import uvicorn
+import asyncio
+import threading
+from typing import Optional, Dict, Any, List
+import json
+from datetime import datetime, time
+import uuid
 
-# # Add the project root to Python path
-# project_root = Path(__file__).parent
-# sys.path.insert(0, str(project_root))
+# Set UTF-8 encoding for Windows
+if sys.platform.startswith('win'):
+    import locale
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
 
-# from ui.layout import create_main_layout
+# Add the project root to Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
+from core.voice_input import VoiceInput
+from core.gemini_response import GeminiResponse
+from core.murf_tts import MurfTTS
 
-# # def main(page: ft.Page):
-# #     try:
-# #         # Set application-wide properties
-# #         page.title = "Ava - AI Voice Assistant"
-# #         page.theme_mode = ft.ThemeMode.LIGHT
-# #         page.window.title = "Ava AI Assistant"
-        
-# #         # Create the main layout
-# #         layout = create_main_layout(page)
-        
-# #         print("🚀 Ava AI Assistant started successfully!")
-# #         print("📱 UI is now available in the desktop app window")
-# #         print("🎤 Click the microphone button to start voice conversations")
-# #         print("⚙️  Make sure to set your API keys in the .env file")
-        
-# #     except Exception as e:
-# #         print(f"❌ Error starting Ava AI Assistant: {e}")
-        
-# #         # Show error in UI
-# #         error_text = ft.Text(
-# #             f"Error starting application:\n{str(e)}",
-# #             size=14,
-# #             color=ft.Colors.RED,
-# #             text_align=ft.TextAlign.CENTER,
-# #         )
-        
-# #         page.add(
-# #             ft.Container(
-# #                 content=ft.Column(
-# #                     controls=[
-# #                         ft.Text(
-# #                             "❌ Ava AI Assistant",
-# #                             size=20,
-# #                             weight=ft.FontWeight.BOLD,
-# #                             color=ft.Colors.RED,
-# #                             text_align=ft.TextAlign.CENTER,
-# #                         ),
-# #                         error_text,
-# #                         ft.Text(
-# #                             "Please check your configuration and try again.",
-# #                             size=12,
-# #                             color=ft.Colors.GREY_600,
-# #                             text_align=ft.TextAlign.CENTER,
-# #                             italic=True,
-# #                         ),
-# #                     ],
-# #                     spacing=10,
-# #                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-# #                 ),
-# #                 padding=ft.padding.all(20),
-# #                 alignment=ft.alignment.center,
-# #                 expand=True,
-# #             )
-# #         )
-        
-# #         page.update()
+# Initialize services
+voice_input: Optional[VoiceInput] = None
+gemini_response: Optional[GeminiResponse] = None
+murf_tts: Optional[MurfTTS] = None
 
+# Initialize in-memory data stores (in production, use a database)
+medications_db = []
+reminders_db = []
+emergency_contacts_db = []
+health_tips_db = [
+    "Drink at least 8 glasses of water daily",
+    "Take short walks every hour if possible",
+    "Get 7-8 hours of sleep each night",
+    "Practice deep breathing exercises to reduce stress"
+]
 
-# def check_environment():
-#     """Check if environment is properly configured"""
-#     issues = []
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup and shutdown events"""
+    global voice_input, gemini_response, murf_tts
     
-#     # Check if .env file exists
-#     env_file = project_root / ".env"
-#     if not env_file.exists():
-#         issues.append("❌ .env file not found. Copy .env.example to .env and add your API keys.")
+    # Startup
+    try:
+        print("Initializing Ava AI services...")
+        
+        # Initialize Voice Input
+        voice_input = VoiceInput()
+        if not voice_input.test_microphone():
+            print("WARNING: Microphone test failed")
+        else:
+            print("SUCCESS: Voice input initialized")
+        
+        # Initialize Gemini
+        gemini_response = GeminiResponse()
+        if not gemini_response.test_connection():
+            print("WARNING: Gemini AI connection failed")
+        else:
+            print("SUCCESS: Gemini AI initialized")
+        
+        # Initialize Murf TTS
+        murf_tts = MurfTTS()
+        if not murf_tts.test_connection():
+            print("WARNING: Murf TTS connection failed")
+        else:
+            print("SUCCESS: Murf TTS initialized")
+            
+        print("API server ready!")
+        
+    except Exception as e:
+        print(f"ERROR: Error initializing services: {e}")
+        # Don't prevent startup, use fallback services
     
-#     # Check for required packages (basic check)
-#     try:
-#         import speech_recognition
-#         import google.generativeai
-#         import requests
-#         import audioplayer
-#     except ImportError as e:
-#         issues.append(f"❌ Missing required package: {e}")
+    yield
     
-#     return issues
+    # Shutdown
+    print("Shutting down Ava AI services...")
 
+# Initialize FastAPI app with lifespan
+app = FastAPI(
+    title="Ava AI Voice Assistant API",
+    description="HTTP API for Ava AI Voice Assistant",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
-# if __name__ == "__main__":
-#     print("🤖 Starting Ava AI Voice Assistant...")
-#     print("=" * 50)
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your Electron app's origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve static audio files
+audio_dir = os.path.join(os.path.dirname(__file__), "assets", "audio")
+os.makedirs(audio_dir, exist_ok=True)
+app.mount("/audio", StaticFiles(directory=audio_dir), name="audio")
+
+# Request/Response Models
+class VoiceRequest(BaseModel):
+    timeout: int = 10
+    phrase_time_limit: int = 15
+
+class GeminiRequest(BaseModel):
+    text: str
+    conversation_history: Optional[list] = None
+
+class TTSRequest(BaseModel):
+    text: str
+    voice_id: Optional[str] = None
+    style: Optional[str] = None
+    speed: float = 1.0
+
+class APIResponse(BaseModel):
+    success: bool
+    data: Optional[Dict[Any, Any]] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+# Medication Management Models
+class Medication(BaseModel):
+    name: str
+    dosage: str
+    frequency: str  # e.g., "Once daily", "Twice daily", "Every 4 hours"
+    time: str       # e.g., "08:00", "20:00"
+    notes: Optional[str] = None
+
+class MedicationResponse(Medication):
+    id: str
+    last_taken: Optional[datetime] = None
+    is_active: bool = True
+
+class Reminder(BaseModel):
+    medication_id: str
+    reminder_time: str  # e.g., "08:00"
+    is_recurring: bool = True
+    days_of_week: Optional[List[str]] = None  # ["Monday", "Wednesday", "Friday"]
+
+class EmergencyContact(BaseModel):
+    name: str
+    phone: str
+    relationship: str
+    is_primary: bool = False
+
+class SymptomCheckRequest(BaseModel):
+    symptoms: str
+    severity: Optional[str] = None  # "mild", "moderate", "severe"
+    duration: Optional[str] = None  # e.g., "2 hours", "3 days"
+
+# API Endpoints
+            
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Ava AI Voice Assistant API", 
+        "version": "1.0.0",
+        "status": "running"
+    }
+
+@app.get("/status")
+async def get_status():
+    """Get service status"""
+    status = {
+        "voice_input": voice_input.test_microphone() if voice_input else False,
+        "gemini_ai": gemini_response.test_connection() if gemini_response else False,
+        "murf_tts": murf_tts.test_connection() if murf_tts else False
+    }
     
-#     # Check environment
-#     issues = check_environment()
+    return APIResponse(
+        success=True,
+        data=status,
+        message="Service status retrieved"
+    )
+
+@app.post("/voice")
+async def start_voice_recognition(request: VoiceRequest):
+    """Start voice recognition and return transcribed text"""
+    if not voice_input:
+        raise HTTPException(status_code=503, detail="Voice input service not available")
     
-#     if issues:
-#         print("⚠️  Configuration Issues Found:")
-#         for issue in issues:
-#             print(f"   {issue}")
-#         print("\n📋 To fix these issues:")
-#         print("   1. Copy .env.example to .env")
-#         print("   2. Add your Google API key and Murf API key to .env")
-#         print("   3. Install dependencies: pip install -r requirements.txt")
-#         print("   4. Run the app again")
-#         print("\n" + "=" * 50)
+    try:
+        # Run voice recognition in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(
+            None, 
+            voice_input.listen_once, 
+            request.timeout, 
+            request.phrase_time_limit
+        )
+        
+        if text:
+            return APIResponse(
+                success=True,
+                data={"text": text, "duration": request.timeout},
+                message="Voice recognition successful"
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message="No speech detected",
+                error="TIMEOUT_OR_NO_SPEECH"
+            )
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Voice recognition failed: {str(e)}")
+
+@app.post("/gemini")
+async def get_gemini_response(request: GeminiRequest):
+    """Get AI response from Gemini"""
+    if not gemini_response:
+        raise HTTPException(status_code=503, detail="Gemini AI service not available")
     
-#     # Start the Flet app
-#     try:
-#         ft.app(
-#             target=main,
-#             assets_dir="assets",  # Include assets directory
-#             port=0,  # Use any available port
-#             view=ft.AppView.FLET_APP,  # Desktop app mode
-#         )
-#     except KeyboardInterrupt:
-#         print("\n👋 Goodbye! Thanks for using Ava AI Assistant.")
-#     except Exception as e:
-#         print(f"\n❌ Fatal error: {e}")
-#         print("Please check the console output above for more details.")
+    try:
+        # Run Gemini request in thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            gemini_response.get_response,
+            request.text
+        )
+        
+        if response:
+            return APIResponse(
+                success=True,
+                data={
+                    "response": response,
+                    "input": request.text
+                },
+                message="AI response generated"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to get AI response")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini AI error: {str(e)}")
+
+@app.post("/murf")
+async def convert_to_speech(request: TTSRequest):
+    """Convert text to speech using Murf TTS"""
+    if not murf_tts:
+        raise HTTPException(status_code=503, detail="Murf TTS service not available")
+    
+    try:
+        # Run TTS in thread pool
+        loop = asyncio.get_event_loop()
+        audio_path = await loop.run_in_executor(
+            None,
+            murf_tts.text_to_speech,
+            request.text,
+            request.voice_id,
+            request.style,
+            request.speed
+        )
+        
+        if audio_path and os.path.exists(audio_path):
+            # Return relative path for frontend
+            filename = os.path.basename(audio_path)
+            audio_url = f"/audio/{filename}"
+            
+            return APIResponse(
+                success=True,
+                data={
+                    "audio_url": audio_url,
+                    "audio_path": audio_path,
+                    "filename": filename,
+                    "text": request.text
+                },
+                message="Text-to-speech conversion successful"
+            )
+        else:
+            # Try fallback TTS
+            if murf_tts.fallback_tts:
+                return APIResponse(
+                    success=True,
+                    data={
+                        "fallback": True,
+                        "text": request.text,
+                        "message": "Using system TTS (no audio file generated)"
+                    },
+                    message="Using fallback TTS"
+                )
+            else:
+                raise HTTPException(status_code=500, detail="Text-to-speech conversion failed")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
+
+@app.get("/voices")
+async def get_available_voices():
+    """Get available voices"""
+    if not murf_tts:
+        raise HTTPException(status_code=503, detail="Murf TTS service not available")
+    
+    try:
+        voices = murf_tts.get_available_voices()
+        return APIResponse(
+            success=True,
+            data=voices,
+            message="Available voices retrieved"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting voices: {str(e)}")
+
+@app.delete("/audio/{filename}")
+async def delete_audio_file(filename: str):
+    """Delete a specific audio file"""
+    try:
+        file_path = os.path.join(audio_dir, filename)
+        if os.path.exists(file_path) and filename.startswith("ava_speech_"):
+            os.remove(file_path)
+            return APIResponse(
+                success=True,
+                message=f"Audio file {filename} deleted"
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Audio file not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
+
+@app.post("/cleanup")
+async def cleanup_audio_files():
+    """Clean up old audio files"""
+    if not murf_tts:
+        raise HTTPException(status_code=503, detail="Murf TTS service not available")
+    
+    try:
+        murf_tts.cleanup_audio_files(max_files=10)
+        return APIResponse(
+            success=True,
+            message="Audio files cleaned up"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cleaning up files: {str(e)}")
+
+@app.post("/stop-audio")
+async def stop_audio_playback():
+    """Stop current audio playback"""
+    if not murf_tts:
+        raise HTTPException(status_code=503, detail="Murf TTS service not available")
+    
+    try:
+        murf_tts.stop_audio()
+        return APIResponse(
+            success=True,
+            message="Audio playback stopped"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error stopping audio: {str(e)}")
+
+# Medication Management Endpoints
+@app.get("/api/medications", response_model=APIResponse)
+async def get_medications():
+    """Get all medications"""
+    try:
+        return APIResponse(
+            success=True,
+            data={"medications": medications_db},
+            message="Medications retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting medications: {str(e)}")
+
+@app.post("/api/medications", response_model=APIResponse)
+async def add_medication(medication: Medication):
+    """Add a new medication"""
+    try:
+        medication_id = str(uuid.uuid4())
+        new_med = MedicationResponse(
+            id=medication_id,
+            **medication.dict()
+        )
+        medications_db.append(new_med.dict())
+        return APIResponse(
+            success=True,
+            data={"medication": new_med.dict()},
+            message="Medication added successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding medication: {str(e)}")
+
+@app.put("/api/medications/{medication_id}", response_model=APIResponse)
+async def update_medication(medication_id: str, medication: Medication):
+    """Update an existing medication"""
+    try:
+        for idx, med in enumerate(medications_db):
+            if med["id"] == medication_id:
+                updated_med = MedicationResponse(
+                    id=medication_id,
+                    **medication.dict(),
+                    last_taken=med.get("last_taken"),
+                    is_active=med.get("is_active", True)
+                )
+                medications_db[idx] = updated_med.dict()
+                return APIResponse(
+                    success=True,
+                    data={"medication": updated_med.dict()},
+                    message="Medication updated successfully"
+                )
+        raise HTTPException(status_code=404, detail="Medication not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating medication: {str(e)}")
+
+@app.delete("/api/medications/{medication_id}", response_model=APIResponse)
+async def delete_medication(medication_id: str):
+    """Delete a medication"""
+    try:
+        global medications_db
+        medications_db = [med for med in medications_db if med["id"] != medication_id]
+        return APIResponse(
+            success=True,
+            message="Medication deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting medication: {str(e)}")
+
+# Reminder Endpoints
+@app.get("/api/reminders", response_model=APIResponse)
+async def get_reminders():
+    """Get all reminders"""
+    try:
+        return APIResponse(
+            success=True,
+            data={"reminders": reminders_db},
+            message="Reminders retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting reminders: {str(e)}")
+
+@app.post("/api/reminders", response_model=APIResponse)
+async def add_reminder(reminder: Reminder):
+    """Add a new reminder"""
+    try:
+        reminder_id = str(uuid.uuid4())
+        new_reminder = {
+            "id": reminder_id,
+            **reminder.dict()
+        }
+        reminders_db.append(new_reminder)
+        return APIResponse(
+            success=True,
+            data={"reminder": new_reminder},
+            message="Reminder added successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding reminder: {str(e)}")
+
+# Emergency Contact Endpoints
+@app.get("/api/emergency-contacts", response_model=APIResponse)
+async def get_emergency_contacts():
+    """Get all emergency contacts"""
+    try:
+        return APIResponse(
+            success=True,
+            data={"contacts": emergency_contacts_db},
+            message="Emergency contacts retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting emergency contacts: {str(e)}")
+
+@app.post("/api/emergency-contacts", response_model=APIResponse)
+async def add_emergency_contact(contact: EmergencyContact):
+    """Add a new emergency contact"""
+    try:
+        contact_id = str(uuid.uuid4())
+        new_contact = {
+            "id": contact_id,
+            **contact.dict()
+        }
+        emergency_contacts_db.append(new_contact)
+        return APIResponse(
+            success=True,
+            data={"contact": new_contact},
+            message="Emergency contact added successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding emergency contact: {str(e)}")
+
+# Health Data Endpoints
+@app.post("/api/symptom-check", response_model=APIResponse)
+async def check_symptoms(request: SymptomCheckRequest):
+    """Analyze symptoms using AI"""
+    if not gemini_response:
+        raise HTTPException(status_code=503, detail="Gemini AI service not available")
+    
+    try:
+        # Construct prompt for symptom analysis
+        prompt = f"User reports: {request.symptoms}"
+        if request.severity:
+            prompt += f"\nSeverity: {request.severity}"
+        if request.duration:
+            prompt += f"\nDuration: {request.duration}"
+        prompt += "\nProvide a professional medical assessment of possible causes and recommendations."
+        
+        # Run Gemini request in thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            gemini_response.get_response,
+            prompt
+        )
+        
+        if response:
+            return APIResponse(
+                success=True,
+                data={
+                    "symptoms": request.symptoms,
+                    "analysis": response,
+                    "timestamp": datetime.now().isoformat()
+                },
+                message="Symptom analysis completed"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to analyze symptoms")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Symptom check error: {str(e)}")
+
+@app.get("/api/health-tips", response_model=APIResponse)
+async def get_health_tips(count: int = Query(3, ge=1, le=10)):
+    """Get daily health tips"""
+    try:
+        tips = health_tips_db[:count]
+        return APIResponse(
+            success=True,
+            data={"tips": tips},
+            message="Health tips retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting health tips: {str(e)}")
+
+# Error handlers
+@app.exception_handler(404)
+async def not_found_handler(request, exc):
+    return JSONResponse(
+        status_code=404,
+        content={"success": False, "error": "Endpoint not found"}
+    )
+
+@app.exception_handler(500)
+async def internal_error_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "Internal server error"}
+    )
+
+import socket
+
+def find_free_port(start_port: int = 8000) -> int:
+    """Find a free port starting from the given port"""
+    for port in range(start_port, start_port + 10):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('127.0.0.1', port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"No free port found in range {start_port} to {start_port + 9}")
+
+def run_api_server(host: str = "127.0.0.1", port: int = 8000):
+    """Run the FastAPI server"""
+    # Find a free port
+    try:
+        free_port = find_free_port(port)
+        if free_port != port:
+            print(f"Port {port} not available, using port {free_port}")
+        port = free_port
+    except RuntimeError as e:
+        print(f"ERROR: {e}")
+        return
+    
+    print(f"Starting Ava AI API server on http://{host}:{port}")
+    print("Core Endpoints:")
+    print(f"   - GET  http://{host}:{port}/")
+    print(f"   - GET  http://{host}:{port}/status")
+    print(f"   - POST http://{host}:{port}/voice")
+    print(f"   - POST http://{host}:{port}/gemini")
+    print(f"   - POST http://{host}:{port}/murf")
+    print(f"   - GET  http://{host}:{port}/voices")
+    print(f"   - GET  http://{host}:{port}/audio/{{filename}}")
+    print(f"   - POST http://{host}:{port}/cleanup")
+    print(f"   - POST http://{host}:{port}/stop-audio")
+    
+    print("\nMedication Management Endpoints:")
+    print(f"   - GET    http://{host}:{port}/api/medications")
+    print(f"   - POST   http://{host}:{port}/api/medications")
+    print(f"   - PUT    http://{host}:{port}/api/medications/{{medication_id}}")
+    print(f"   - DELETE http://{host}:{port}/api/medications/{{medication_id}}")
+    
+    print("\nReminder Endpoints:")
+    print(f"   - GET  http://{host}:{port}/api/reminders")
+    print(f"   - POST http://{host}:{port}/api/reminders")
+    
+    print("\nEmergency Contact Endpoints:")
+    print(f"   - GET  http://{host}:{port}/api/emergency-contacts")
+    print(f"   - POST http://{host}:{port}/api/emergency-contacts")
+    
+    print("\nHealth Data Endpoints:")
+    print(f"   - POST http://{host}:{port}/api/symptom-check")
+    print(f"   - GET  http://{host}:{port}/api/health-tips")
+    
+    uvicorn.run(
+        app, 
+        host=host, 
+        port=port, 
+        log_level="info",
+        access_log=True
+    )
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Ava AI Voice Assistant API Server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
+    
+    args = parser.parse_args()
+    
+    try:
+        run_api_server(args.host, args.port)
+    except KeyboardInterrupt:
+        print("\nAPI server stopped by user")
+    except Exception as e:
+        print(f"Fatal error: {e}")
