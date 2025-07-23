@@ -1,24 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Volume2, Pause, Play, Square, Plus, AlertCircle, Calendar, Pill, HeartPulse, Stethoscope, Download, Sun, Moon, Bell, BellOff } from 'lucide-react';
-import Header from '../components/Header-New';
+import { apiService } from '../services/api';
+import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
+import type {
+  Message,
+  AppState,
+  Medication,
+  MedicationResponse,
+  Reminder,
+  ReminderResponse,
+  EmergencyContact,
+  EmergencyContactResponse,
+  SymptomCheckRequest,
+  SymptomCheckResponse,
+  HealthTip
+} from '../types';
+
+// Components
 import VoiceInterface from '../components/VoiceInterface';
 import ChatPanel from '../components/ChatPanel';
 import StatusIndicator from '../components/StatusIndicator';
-import { apiService } from '../services/api';
-import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
-import type { Message, AppState, Medication, SymptomCheck } from '../types';
-
-// Extend Window type for SpeechRecognition
-declare global {
-  // Add SpeechRecognition type to global scope
-  // @ts-ignore
-  var SpeechRecognition: any;
-  interface Window {
-    SpeechRecognition?: any;
-    webkitSpeechRecognition?: any;
-  }
-}
 
 const Dashboard: React.FC = () => {
   const [appState, setAppState] = useState<AppState>({
@@ -33,50 +35,82 @@ const Dashboard: React.FC = () => {
     isSpeaking: false,
     medications: [],
     reminders: [],
-    healthTips: [
-      "Don't forget to drink water regularly",
-      "Take short walks every hour if possible",
-      "Remember to take deep breaths to reduce stress"
-    ]
+    emergencyContacts: [] as EmergencyContactResponse[],
+    healthTips: []
   });
 
   const [activeTab, setActiveTab] = useState<'medications' | 'health' | 'chat'>('medications');
-  const [newMedication, setNewMedication] = useState<Omit<Medication, 'id'>>({ name: '', dosage: '', frequency: '', time: '' });
-  const [symptomCheck, setSymptomCheck] = useState<SymptomCheck>({ symptoms: '', result: '' });
+  const [newMedication, setNewMedication] = useState<Omit<Medication, 'id'>>({
+    name: '',
+    dosage: '',
+    frequency: 'Once daily',
+    time: '08:00'
+  });
+  const [symptomCheck, setSymptomCheck] = useState<SymptomCheckRequest>({
+    symptoms: '',
+    severity: 'mild',
+    duration: ''
+  });
+  const [symptomResult, setSymptomResult] = useState<SymptomCheckResponse | null>(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
-  const [emergencyContacts, setEmergencyContacts] = useState([
-    { name: 'Primary Doctor', number: '555-0101' },
-    { name: 'Emergency Services', number: '911' },
-    { name: 'Family Contact', number: '555-0202' }
-  ]);
+  const [newEmergencyContact, setNewEmergencyContact] = useState<Omit<EmergencyContactResponse, 'id'>>({
+    name: '',
+    phone: '',
+    relationship: 'Doctor',
+    is_primary: false
+  });
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isProcessingRef = useRef<boolean>(false);
 
-  // Load saved data on mount
+  // Load initial data
   useEffect(() => {
-    const savedMessages = storage.get(STORAGE_KEYS.MESSAGES) || [];
-    const savedSettings = storage.get(STORAGE_KEYS.SETTINGS) || {};
-    const savedMedications = storage.get(STORAGE_KEYS.MEDICATIONS) || [];
-    const savedTheme = storage.get(STORAGE_KEYS.THEME) || THEMES.LIGHT;
+    const loadInitialData = async () => {
+      try {
+        // Load saved settings
+        const savedMessages = storage.get(STORAGE_KEYS.MESSAGES) || [];
+        const savedSettings = storage.get(STORAGE_KEYS.SETTINGS) || {};
+        const savedTheme = storage.get(STORAGE_KEYS.THEME) || THEMES.LIGHT;
 
-    setAppState(prev => ({
-      ...prev,
-      messages: savedMessages.slice(-MAX_MESSAGES),
-      isMuted: savedSettings.isMuted || false,
-      isDarkMode: savedTheme === THEMES.DARK,
-      medications: savedMedications
-    }));
+        // Fetch data from API
+        const [
+          medicationsRes,
+          remindersRes,
+          contactsRes,
+          tipsRes
+        ] = await Promise.all([
+          apiService.getMedications(),
+          apiService.getReminders(),
+          apiService.getEmergencyContacts(),
+          apiService.getHealthTips(3)
+        ]);
 
-    document.documentElement.setAttribute('data-theme', savedTheme);
+        setAppState(prev => ({
+          ...prev,
+          messages: savedMessages.slice(-MAX_MESSAGES),
+          isMuted: savedSettings.isMuted || false,
+          isDarkMode: savedTheme === THEMES.DARK,
+          medications: medicationsRes,
+          reminders: remindersRes as ReminderResponse[],
+          emergencyContacts: contactsRes as EmergencyContactResponse[],
+          healthTips: tipsRes as HealthTip[]
+        }));
+
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      } catch (error) {
+        console.error('Failed to load initial data:', error);
+      }
+    };
+
+    loadInitialData();
   }, []);
 
-  // Update state helper
+  // State update helper
   const updateState = useCallback((updates: Partial<AppState>) => {
     setAppState(prev => ({ ...prev, ...updates }));
   }, []);
 
-  // Add message to chat
+  // Chat message handling
   const addMessage = useCallback((text: string, isUser: boolean) => {
     const message: Message = {
       id: generateId(),
@@ -94,14 +128,72 @@ const Dashboard: React.FC = () => {
     return message;
   }, []);
 
-  // Get AI response
+  // Voice recognition
+  const startListening = useCallback(async () => {
+    if (appState.isListening || isProcessingRef.current) return;
+
+    isProcessingRef.current = true;
+    try {
+      updateState({ isListening: true, status: 'listening' });
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
+      const response = await apiService.startVoiceRecognition({
+        timeout: 10,
+        phrase_time_limit: 15
+      });
+
+      if (response.text?.trim()) {
+        addMessage(response.text, true);
+        await getAIResponse(response.text);
+      } else {
+        addMessage('No speech detected. Please try again.', false);
+      }
+    } catch (error: any) {
+      console.error('Voice input error:', error);
+      updateState({ status: 'error' });
+
+      const errorMessage = error.message?.includes('Network error')
+        ? 'Cannot connect to voice service. Please check if the backend is running.'
+        : error.message?.includes('timeout') || error.message?.includes('TIMEOUT')
+          ? 'Voice recognition timed out. Please try again.'
+          : `Voice recognition error: ${error.message}`;
+
+      addMessage(errorMessage, false);
+    } finally {
+      updateState({ isListening: false });
+      if (appState.status !== 'speaking' && appState.status !== 'processing') {
+        setTimeout(() => updateState({ status: 'idle' }), 1000);
+      }
+      isProcessingRef.current = false;
+    }
+  }, [appState.isListening, appState.status, addMessage, updateState]);
+
+  const stopListening = useCallback(async () => {
+    if (!appState.isListening) return;
+
+    try {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      await apiService.stopVoiceRecognition();
+    } catch (error) {
+      console.error('Stop listening error:', error);
+    } finally {
+      updateState({ isListening: false, status: 'idle' });
+    }
+  }, [appState.isListening, updateState]);
+
+  // AI response handling
   const getAIResponse = useCallback(async (userText: string) => {
     try {
       updateState({ status: 'processing' });
 
-      // Check for medication queries
-      if (userText.toLowerCase().includes('what is my next medicine') ||
-        userText.toLowerCase().includes('what medicine do i take next')) {
+      // Handle medication queries
+      if (userText.toLowerCase().includes('medicine') || userText.toLowerCase().includes('medication')) {
         const nextMed = getNextMedication();
         if (nextMed) {
           const response = `Your next medication is ${nextMed.name}, ${nextMed.dosage} at ${nextMed.time}.`;
@@ -111,13 +203,13 @@ const Dashboard: React.FC = () => {
         }
       }
 
-      // Check for symptom queries
+      // Handle symptom queries
       if (userText.toLowerCase().includes('i have') ||
         userText.toLowerCase().includes('i feel') ||
         userText.toLowerCase().includes('symptom')) {
-        const response = await apiService.getGeminiResponse({ text: userText });
-        const aiMessage = addMessage(response.response, false);
-        if (!appState.isMuted) await generateSpeech(response.response, aiMessage.id);
+        const response = await apiService.checkSymptoms({ symptoms: userText });
+        const aiMessage = addMessage(response.analysis, false);
+        if (!appState.isMuted) await generateSpeech(response.analysis, aiMessage.id);
         return;
       }
 
@@ -134,65 +226,7 @@ const Dashboard: React.FC = () => {
     }
   }, [addMessage, appState.isMuted, updateState]);
 
-  // Start listening to user voice
-  const startListening = useCallback(async () => {
-    if (appState.isListening || isProcessingRef.current) return;
-
-    try {
-      isProcessingRef.current = true;
-      updateState({ isListening: true, status: 'listening' });
-      abortControllerRef.current = new AbortController();
-
-      const SpeechRecognitionClass = (window.SpeechRecognition || (window as any).webkitSpeechRecognition);
-      const recognition = new SpeechRecognitionClass();
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.continuous = false;
-
-      interface SpeechRecognitionEventResult {
-        [index: number]: {
-          transcript: string;
-        };
-      }
-
-      interface SpeechRecognitionEvent {
-        results: SpeechRecognitionEventResult[];
-      }
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript: string = event.results[0][0].transcript;
-        console.log('Voice input:', transcript);
-        addMessage(transcript, true);
-        getAIResponse(transcript);
-      };
-
-      recognition.onerror = (event: { error: any; }) => {
-        console.error('Speech recognition error', event.error);
-        updateState({ status: 'error' });
-        setTimeout(() => updateState({ status: 'idle' }), 2000);
-      };
-
-      recognition.onend = () => {
-        updateState({ isListening: false });
-      };
-
-      recognition.start();
-    } catch (error) {
-      console.error('Start listening error:', error);
-      updateState({ isListening: false, status: 'error' });
-    } finally {
-      isProcessingRef.current = false;
-    }
-  }, [appState.isListening, updateState, addMessage, getAIResponse]);
-
-  // Stop listening
-  const stopListening = useCallback(() => {
-    if (!appState.isListening) return;
-    updateState({ isListening: false, status: 'idle' });
-  }, [appState.isListening, updateState]);
-
-  // Generate speech
+  // Text-to-speech
   const generateSpeech = useCallback(async (text: string, messageId: string) => {
     try {
       updateState({ status: 'speaking', isSpeaking: true });
@@ -215,11 +249,23 @@ const Dashboard: React.FC = () => {
           updateState({ currentAudio: audio, currentAudioUrl: response.audio_url });
 
           audio.onended = () => {
-            updateState({ isSpeaking: false, status: 'idle', currentAudio: undefined, currentAudioUrl: undefined, isPaused: false });
+            updateState({
+              isSpeaking: false,
+              status: 'idle',
+              currentAudio: undefined,
+              currentAudioUrl: undefined,
+              isPaused: false
+            });
           };
 
           audio.onerror = () => {
-            updateState({ isSpeaking: false, status: 'idle', currentAudio: undefined, currentAudioUrl: undefined, isPaused: false });
+            updateState({
+              isSpeaking: false,
+              status: 'idle',
+              currentAudio: undefined,
+              currentAudioUrl: undefined,
+              isPaused: false
+            });
           };
         }
       }
@@ -230,22 +276,20 @@ const Dashboard: React.FC = () => {
   }, [updateState, appState.isMuted]);
 
   // Medication management
-  const addMedication = useCallback(() => {
-    if (!newMedication.name || !newMedication.dosage || !newMedication.time) return;
-
-    const medication: Medication = {
-      id: generateId(),
-      ...newMedication
-    };
-
-    setAppState(prev => {
-      const newMedications = [...prev.medications, medication];
-      storage.set(STORAGE_KEYS.MEDICATIONS, newMedications);
-      return { ...prev, medications: newMedications };
-    });
-
-    setNewMedication({ name: '', dosage: '', frequency: '', time: '' });
-    addMessage(`Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`, false);
+  const addMedication = useCallback(async () => {
+    try {
+      const medication = await apiService.addMedication(newMedication);
+      setAppState(prev => ({
+        ...prev,
+        medications: [...prev.medications, medication]
+      }));
+      setNewMedication({ name: '', dosage: '', frequency: 'Once daily', time: '08:00' });
+      addMessage(`Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`, false);
+      (document.getElementById('add-medication-modal') as HTMLDialogElement)?.close();
+    } catch (error) {
+      console.error('Failed to add medication:', error);
+      addMessage('Failed to add medication. Please try again.', false);
+    }
   }, [newMedication, addMessage]);
 
   const getNextMedication = useCallback(() => {
@@ -272,24 +316,53 @@ const Dashboard: React.FC = () => {
     if (!symptomCheck.symptoms.trim()) return;
 
     try {
-      setSymptomCheck(prev => ({ ...prev, result: 'Analyzing symptoms...' }));
-      const response = await apiService.getGeminiResponse({ text: symptomCheck.symptoms });
-      setSymptomCheck(prev => ({ ...prev, result: response.response }));
-      addMessage(`You reported: ${symptomCheck.symptoms}. ${response.response}`, false);
+      setSymptomResult({
+        symptoms: symptomCheck.symptoms,
+        analysis: 'Analyzing symptoms...',
+        timestamp: new Date().toISOString()
+      });
+
+      const response = await apiService.checkSymptoms(symptomCheck);
+      setSymptomResult(response);
+      addMessage(`You reported: ${symptomCheck.symptoms}. ${response.analysis}`, false);
     } catch (error) {
       console.error('Symptom check error:', error);
-      setSymptomCheck(prev => ({ ...prev, result: 'Failed to analyze symptoms. Please try again.' }));
+      setSymptomResult({
+        symptoms: symptomCheck.symptoms,
+        analysis: 'Failed to analyze symptoms. Please try again.',
+        timestamp: new Date().toISOString()
+      });
     }
-  }, [symptomCheck.symptoms, addMessage]);
+  }, [symptomCheck, addMessage]);
 
-  // Emergency handling
-  const triggerEmergency = useCallback((contactIndex: number) => {
-    const contact = emergencyContacts[contactIndex];
-    addMessage(`Emergency: Calling ${contact.name} at ${contact.number}`, false);
-    // In a real app, this would actually call the number
-    alert(`Calling ${contact.name} at ${contact.number}`);
-    setShowEmergencyModal(false);
-  }, [emergencyContacts, addMessage]);
+  // Emergency contacts
+  const addEmergencyContact = useCallback(async () => {
+    try {
+      const contact = await apiService.addEmergencyContact(newEmergencyContact);
+      setAppState(prev => ({
+        ...prev,
+        emergencyContacts: [...(prev.emergencyContacts as EmergencyContactResponse[]), contact]
+      }));
+      setNewEmergencyContact({
+        name: '',
+        phone: '',
+        relationship: 'Doctor',
+        is_primary: false
+      });
+      (document.getElementById('add-contact-modal') as HTMLDialogElement)?.close();
+    } catch (error) {
+      console.error('Failed to add emergency contact:', error);
+    }
+  }, [newEmergencyContact]);
+
+  const triggerEmergency = useCallback((contactId: string) => {
+    const contact = appState.emergencyContacts.find(c => c.id === contactId);
+    if (contact) {
+      addMessage(`Emergency: Calling ${contact.name} at ${contact.phone}`, false);
+      // In a real app, this would actually call the number
+      alert(`Calling ${contact.name} at ${contact.phone}`);
+    }
+  }, [appState.emergencyContacts, addMessage]);
 
   // Audio controls
   const handlePlayAudio = useCallback(async (audioUrl: string) => {
@@ -300,17 +373,31 @@ const Dashboard: React.FC = () => {
     }
 
     const audio = await playAudio(audioUrl);
-    updateState({ currentAudio: audio, isSpeaking: true, currentAudioUrl: audioUrl });
+    updateState({
+      currentAudio: audio,
+      isSpeaking: true,
+      currentAudioUrl: audioUrl
+    });
 
     audio.onended = () => {
-      updateState({ currentAudio: undefined, isSpeaking: false, currentAudioUrl: undefined, isPaused: false });
+      updateState({
+        currentAudio: undefined,
+        isSpeaking: false,
+        currentAudioUrl: undefined,
+        isPaused: false
+      });
     };
   }, [appState.currentAudio, appState.isMuted, updateState]);
 
   const handleStopAudio = useCallback(() => {
     if (appState.currentAudio) {
       stopAudio(appState.currentAudio);
-      updateState({ currentAudio: undefined, isSpeaking: false, isPaused: false, currentAudioUrl: undefined });
+      updateState({
+        currentAudio: undefined,
+        isSpeaking: false,
+        isPaused: false,
+        currentAudioUrl: undefined
+      });
     }
   }, [appState.currentAudio, updateState]);
 
@@ -330,7 +417,10 @@ const Dashboard: React.FC = () => {
   const handleToggleMute = useCallback(() => {
     const newMuted = !appState.isMuted;
     updateState({ isMuted: newMuted });
-    storage.set(STORAGE_KEYS.SETTINGS, { ...storage.get(STORAGE_KEYS.SETTINGS), isMuted: newMuted });
+    storage.set(STORAGE_KEYS.SETTINGS, {
+      ...storage.get(STORAGE_KEYS.SETTINGS),
+      isMuted: newMuted
+    });
     if (newMuted && appState.currentAudio) handleStopAudio();
   }, [appState.isMuted, appState.currentAudio, updateState, handleStopAudio]);
 
@@ -417,7 +507,7 @@ const Dashboard: React.FC = () => {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-300">Medication Management</h2>
                 <button
-                  onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement | null)?.showModal()}
+                  onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement)?.showModal()}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-full shadow hover:bg-blue-600 transition-all"
                 >
                   <Plus size={16} /> Add Medication
@@ -501,6 +591,24 @@ const Dashboard: React.FC = () => {
                     className="w-full px-4 py-3 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 mb-4"
                     rows={3}
                   />
+                  <div className="flex gap-4 mb-4">
+                    <select
+                      value={symptomCheck.severity}
+                      onChange={(e) => setSymptomCheck(prev => ({ ...prev, severity: e.target.value as any }))}
+                      className="px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+                    >
+                      <option value="mild">Mild</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="severe">Severe</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={symptomCheck.duration}
+                      onChange={(e) => setSymptomCheck(prev => ({ ...prev, duration: e.target.value }))}
+                      placeholder="Duration (e.g., 2 hours)"
+                      className="flex-1 px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+                    />
+                  </div>
                   <button
                     onClick={checkSymptoms}
                     disabled={!symptomCheck.symptoms.trim()}
@@ -508,10 +616,30 @@ const Dashboard: React.FC = () => {
                   >
                     Analyze Symptoms
                   </button>
-                  {symptomCheck.result && (
+                  {symptomResult && (
                     <div className="mt-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-purple-100 dark:border-purple-800/50">
                       <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-2">Analysis Result:</h4>
-                      <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{symptomCheck.result}</p>
+                      <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{symptomResult.analysis}</p>
+                      {symptomResult.possible_causes && (
+                        <div className="mt-3">
+                          <h5 className="font-medium text-purple-600 dark:text-purple-200">Possible Causes:</h5>
+                          <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300">
+                            {symptomResult.possible_causes.map((cause, i) => (
+                              <li key={i}>{cause}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {symptomResult.recommendations && (
+                        <div className="mt-3">
+                          <h5 className="font-medium text-purple-600 dark:text-purple-200">Recommendations:</h5>
+                          <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300">
+                            {symptomResult.recommendations.map((rec, i) => (
+                              <li key={i}>{rec}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -529,7 +657,7 @@ const Dashboard: React.FC = () => {
                       transition={{ delay: index * 0.1 }}
                       className="bg-green-50 dark:bg-green-900/20 px-4 py-3 rounded-lg border border-green-100 dark:border-green-800/50"
                     >
-                      <p className="text-green-700 dark:text-green-300">{tip}</p>
+                      <p className="text-green-700 dark:text-green-300">{tip.tip}</p>
                     </motion.li>
                   ))}
                 </ul>
@@ -685,7 +813,6 @@ const Dashboard: React.FC = () => {
                 onChange={(e) => setNewMedication(prev => ({ ...prev, frequency: e.target.value }))}
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
               >
-                <option value="">Select frequency</option>
                 <option value="Once daily">Once daily</option>
                 <option value="Twice daily">Twice daily</option>
                 <option value="Three times daily">Three times daily</option>
@@ -704,16 +831,13 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button
-              onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement | null)?.close()}
+              onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement)?.close()}
               className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-all"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                addMedication();
-                (document.getElementById('add-medication-modal') as HTMLDialogElement | null)?.close();
-              }}
+              onClick={addMedication}
               disabled={!newMedication.name || !newMedication.dosage || !newMedication.time}
               className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -722,27 +846,109 @@ const Dashboard: React.FC = () => {
           </div>
         </dialog>
 
+        {/* Add Emergency Contact Modal */}
+        <dialog id="add-contact-modal" className="bg-white dark:bg-slate-900 rounded-lg shadow-xl p-6 w-full max-w-md">
+          <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-4">Add Emergency Contact</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+              <input
+                type="text"
+                value={newEmergencyContact.name}
+                onChange={(e) => setNewEmergencyContact(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+                placeholder="e.g., Dr. Smith"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone Number</label>
+              <input
+                type="tel"
+                value={newEmergencyContact.phone}
+                onChange={(e) => setNewEmergencyContact(prev => ({ ...prev, phone: e.target.value }))}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+                placeholder="e.g., 555-123-4567"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Relationship</label>
+              <select
+                value={newEmergencyContact.relationship}
+                onChange={(e) => setNewEmergencyContact(prev => ({ ...prev, relationship: e.target.value }))}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+              >
+                <option value="Doctor">Doctor</option>
+                <option value="Family">Family</option>
+                <option value="Friend">Friend</option>
+                <option value="Caregiver">Caregiver</option>
+              </select>
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="is-primary"
+                checked={newEmergencyContact.is_primary}
+                onChange={(e) => setNewEmergencyContact(prev => ({ ...prev, is_primary: e.target.checked }))}
+                className="mr-2"
+              />
+              <label htmlFor="is-primary" className="text-sm text-gray-700 dark:text-gray-300">Primary Contact</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              onClick={() => (document.getElementById('add-contact-modal') as HTMLDialogElement)?.close()}
+              className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={addEmergencyContact}
+              disabled={!newEmergencyContact.name || !newEmergencyContact.phone}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Add Contact
+            </button>
+          </div>
+        </dialog>
+
         {/* Emergency Modal */}
         {showEmergencyModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-4">Emergency Contacts</h3>
-              <p className="text-gray-700 dark:text-gray-300 mb-4">Who would you like to contact?</p>
-              <ul className="space-y-2 mb-6">
-                {emergencyContacts.map((contact, index) => (
-                  <li key={index} className="flex justify-between items-center bg-red-50 dark:bg-red-900/20 px-4 py-3 rounded-lg border border-red-100 dark:border-red-800/50">
-                    <div>
-                      <p className="font-medium text-red-700 dark:text-red-300">{contact.name}</p>
-                      <p className="text-sm text-red-600 dark:text-red-400">{contact.number}</p>
-                    </div>
-                    <button
-                      onClick={() => triggerEmergency(index)}
-                      className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all"
-                    >
-                      Call
-                    </button>
-                  </li>
-                ))}
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-red-600 dark:text-red-400">Emergency Contacts</h3>
+                <button
+                  onClick={() => (document.getElementById('add-contact-modal') as HTMLDialogElement)?.showModal()}
+                  className="flex items-center gap-1 px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all"
+                >
+                  <Plus size={16} /> Add
+                </button>
+              </div>
+              <p className="text-gray-700 dark:text-gray-300 mb-4">Select a contact to call:</p>
+              <ul className="space-y-2 mb-6 max-h-60 overflow-y-auto">
+                {appState.emergencyContacts.length > 0 ? (
+                  appState.emergencyContacts.map((contact, index) => (
+                    <li key={contact.id} className="flex justify-between items-center bg-red-50 dark:bg-red-900/20 px-4 py-3 rounded-lg border border-red-100 dark:border-red-800/50">
+                      <div>
+                        <p className="font-medium text-red-700 dark:text-red-300">
+                          {contact.name} {contact.is_primary && <span className="text-xs bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 px-2 py-1 rounded-full ml-2">Primary</span>}
+                        </p>
+                        <p className="text-sm text-red-600 dark:text-red-400">{contact.phone}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{contact.relationship}</p>
+                      </div>
+                      <button
+                        onClick={() => triggerEmergency(contact.id)}
+                        className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all"
+                      >
+                        Call
+                      </button>
+                    </li>
+                  ))
+                ) : (
+                  <div className="bg-red-50 dark:bg-red-900/20 px-4 py-3 rounded-lg border border-dashed border-red-200 dark:border-red-800/50 text-center">
+                    <p className="text-red-600 dark:text-red-300">No emergency contacts added</p>
+                  </div>
+                )}
               </ul>
               <div className="flex justify-end">
                 <button

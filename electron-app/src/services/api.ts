@@ -8,7 +8,16 @@ import type {
   GeminiResponseData,
   TTSRequest,
   TTSResponse,
-  ServiceStatus 
+  ServiceStatus,
+  Medication,
+  MedicationResponse,
+  Reminder,
+  EmergencyContact,
+  SymptomCheckRequest,
+  SymptomCheckResponse,
+  HealthTip,
+  ReminderResponse,
+  EmergencyContactResponse
 } from '../types';
 
 class APIService {
@@ -44,7 +53,7 @@ class APIService {
     }
   }
 
-  // New FastAPI endpoints
+  // Core API Methods
   async checkServerStatus(): Promise<ServiceStatus> {
     const response: APIResponse<ServiceStatus> = await this.handleRequest(() =>
       axios.get(`${this.baseURL}/status`)
@@ -96,25 +105,131 @@ class APIService {
     throw new Error(response.error || 'Text-to-speech conversion failed');
   }
 
-  // Legacy compatibility methods
-  async stopVoiceRecognition(): Promise<VoiceRecognitionResponse> {
-    try {
-      await this.handleRequest(() => axios.post(`${this.baseURL}/stop-audio`));
-      return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+  // Medication Management
+  async getMedications(): Promise<MedicationResponse[]> {
+    const response: APIResponse<{ medications: MedicationResponse[] }> = await this.handleRequest(() =>
+      axios.get(`${this.baseURL}/api/medications`)
+    );
+    
+    if (response.success && response.data?.medications) {
+      return response.data.medications;
+    }
+    
+    throw new Error(response.error || 'Failed to get medications');
+  }
+
+  async addMedication(medication: Medication): Promise<MedicationResponse> {
+    const response: APIResponse<{ medication: MedicationResponse }> = await this.handleRequest(() =>
+      axios.post(`${this.baseURL}/api/medications`, medication)
+    );
+    
+    if (response.success && response.data?.medication) {
+      return response.data.medication;
+    }
+    
+    throw new Error(response.error || 'Failed to add medication');
+  }
+
+  async updateMedication(id: string, medication: Medication): Promise<MedicationResponse> {
+    const response: APIResponse<{ medication: MedicationResponse }> = await this.handleRequest(() =>
+      axios.put(`${this.baseURL}/api/medications/${id}`, medication)
+    );
+    
+    if (response.success && response.data?.medication) {
+      return response.data.medication;
+    }
+    
+    throw new Error(response.error || 'Failed to update medication');
+  }
+
+  async deleteMedication(id: string): Promise<void> {
+    const response: APIResponse = await this.handleRequest(() =>
+      axios.delete(`${this.baseURL}/api/medications/${id}`)
+    );
+    
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to delete medication');
     }
   }
 
-  async checkServerHealth(): Promise<{ status: string; message: string }> {
-    try {
-      await this.handleRequest(() => axios.get(`${this.baseURL}/`));
-      return { status: 'healthy', message: 'Server is running' };
-    } catch (error: any) {
-      return { status: 'unhealthy', message: error.message };
+  // Reminders
+  async getReminders(): Promise<ReminderResponse[]> {
+    const response: APIResponse<{ reminders: ReminderResponse[] }> = await this.handleRequest(() =>
+      axios.get(`${this.baseURL}/api/reminders`)
+    );
+    
+    if (response.success && response.data?.reminders) {
+      return response.data.reminders;
     }
+    
+    throw new Error(response.error || 'Failed to get reminders');
   }
 
+  async addReminder(reminder: Reminder): Promise<ReminderResponse> {
+    const response: APIResponse<{ reminder: ReminderResponse }> = await this.handleRequest(() =>
+      axios.post(`${this.baseURL}/api/reminders`, reminder)
+    );
+    
+    if (response.success && response.data?.reminder) {
+      return response.data.reminder;
+    }
+    
+    throw new Error(response.error || 'Failed to add reminder');
+  }
+
+  // Emergency Contacts
+  async getEmergencyContacts(): Promise<EmergencyContactResponse[]> {
+    const response: APIResponse<{ contacts: EmergencyContactResponse[] }> = await this.handleRequest(() =>
+      axios.get(`${this.baseURL}/api/emergency-contacts`)
+    );
+    
+    if (response.success && response.data?.contacts) {
+      return response.data.contacts;
+    }
+    
+    throw new Error(response.error || 'Failed to get emergency contacts');
+  }
+
+  async addEmergencyContact(contact: EmergencyContact): Promise<EmergencyContactResponse> {
+    const response: APIResponse<{ contact: EmergencyContactResponse }> = await this.handleRequest(() =>
+      axios.post(`${this.baseURL}/api/emergency-contacts`, contact)
+    );
+    
+    if (response.success && response.data?.contact) {
+      return response.data.contact;
+    }
+    
+    throw new Error(response.error || 'Failed to add emergency contact');
+  }
+
+  // Health Data
+  async checkSymptoms(request: SymptomCheckRequest): Promise<SymptomCheckResponse> {
+    const response: APIResponse<SymptomCheckResponse> = await this.handleRequest(() =>
+      axios.post(`${this.baseURL}/api/symptom-check`, request)
+    );
+    
+    if (response.success && response.data) {
+      return response.data;
+    }
+    
+    throw new Error(response.error || 'Failed to analyze symptoms');
+  }
+
+  async getHealthTips(count: number = 3): Promise<HealthTip[]> {
+    const response: APIResponse<{ tips: HealthTip[] }> = await this.handleRequest(() =>
+      axios.get(`${this.baseURL}/api/health-tips`, {
+        params: { count }
+      })
+    );
+    
+    if (response.success && response.data?.tips) {
+      return response.data.tips;
+    }
+    
+    throw new Error(response.error || 'Failed to get health tips');
+  }
+
+  // Audio Management
   getAudioUrl(filename: string): string {
     // Ensure we have a proper filename
     const cleanFilename = filename.startsWith('/') ? filename.slice(1) : filename;
@@ -162,6 +277,25 @@ class APIService {
     }
     
     throw new Error(response.error || 'Failed to get voices');
+  }
+
+  // Legacy compatibility methods
+  async stopVoiceRecognition(): Promise<VoiceRecognitionResponse> {
+    try {
+      await this.handleRequest(() => axios.post(`${this.baseURL}/stop-audio`));
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async checkServerHealth(): Promise<{ status: string; message: string }> {
+    try {
+      await this.handleRequest(() => axios.get(`${this.baseURL}/`));
+      return { status: 'healthy', message: 'Server is running' };
+    } catch (error: any) {
+      return { status: 'unhealthy', message: error.message };
+    }
   }
 }
 

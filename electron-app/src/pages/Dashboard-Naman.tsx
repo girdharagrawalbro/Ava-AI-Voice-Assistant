@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Volume2, Pause, Play, Square, Home, ArrowLeft } from 'lucide-react';
 import Header from '../components/Header-New';
 import VoiceInterface from '../components/VoiceInterface';
-import ChatPanel from '../components/ChatPanel';
+import ChatPanel from '../components/ChatPanel'; ``
 import StatusIndicator from '../components/StatusIndicator';
 import { apiService } from '../services/api';
 import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
