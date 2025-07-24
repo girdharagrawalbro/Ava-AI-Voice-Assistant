@@ -100,7 +100,7 @@ export interface Reminder {
 
 export interface ReminderResponse extends Reminder {
   id: string;
-  created_at: Date;
+  created_at?: Date;
 }
 
 export interface ReminderListResponse {

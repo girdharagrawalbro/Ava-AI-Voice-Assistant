@@ -42,10 +42,10 @@ medications_db = []
 reminders_db = []
 emergency_contacts_db = []
 health_tips_db = [
-    "Drink at least 8 glasses of water daily",
-    "Take short walks every hour if possible",
-    "Get 7-8 hours of sleep each night",
-    "Practice deep breathing exercises to reduce stress"
+    {"tip": "Drink at least 8 glasses of water daily"},
+    {"tip": "Take short walks every hour if possible"},
+    {"tip": "Get 7-8 hours of sleep each night"},
+    {"tip": "Practice deep breathing exercises to reduce stress"}
 ]
 
 @asynccontextmanager
@@ -146,6 +146,8 @@ class MedicationResponse(Medication):
     is_active: bool = True
 
 class Reminder(BaseModel):
+    title: str
+    description: Optional[str] = None
     medicationId: str
     schedule: str  # e.g., "08:00"
     is_recurring: bool = True
@@ -386,6 +388,23 @@ async def add_medication(medication: Medication):
             **medication.dict()
         )
         medications_db.append(new_med.dict())
+        
+        # Automatically create a reminder for this medication
+        try:
+            reminder_id = str(uuid.uuid4())
+            new_reminder = {
+                "id": reminder_id,
+                "title": f"Take {medication.name}",
+                "description": f"Time to take your {medication.dosage} of {medication.name}",
+                "medicationId": medication_id,
+                "schedule": medication.time,
+                "is_recurring": True,
+                "days_of_week": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            }
+            reminders_db.append(new_reminder)
+        except Exception as reminder_error:
+            print(f"Warning: Failed to create automatic reminder: {reminder_error}")
+        
         return APIResponse(
             success=True,
             data={"medication": new_med.dict()},
@@ -407,6 +426,19 @@ async def update_medication(medication_id: str, medication: Medication):
                     is_active=med.get("is_active", True)
                 )
                 medications_db[idx] = updated_med.dict()
+                
+                # Update associated reminders
+                try:
+                    for reminder_idx, reminder in enumerate(reminders_db):
+                        if reminder.get("medicationId") == medication_id:
+                            reminders_db[reminder_idx].update({
+                                "title": f"Take {medication.name}",
+                                "description": f"Time to take your {medication.dosage} of {medication.name}",
+                                "schedule": medication.time
+                            })
+                except Exception as reminder_error:
+                    print(f"Warning: Failed to update automatic reminders: {reminder_error}")
+                
                 return APIResponse(
                     success=True,
                     data={"medication": updated_med.dict()},
@@ -421,6 +453,15 @@ async def delete_medication(medication_id: str):
     """Delete a medication"""
     try:
         global medications_db
+        
+        # First delete associated reminders
+        try:
+            global reminders_db
+            reminders_db = [reminder for reminder in reminders_db if reminder.get("medicationId") != medication_id]
+        except Exception as reminder_error:
+            print(f"Warning: Failed to delete automatic reminders: {reminder_error}")
+        
+        # Then delete the medication
         medications_db = [med for med in medications_db if med["id"] != medication_id]
         return APIResponse(
             success=True,
@@ -441,6 +482,19 @@ async def get_reminders():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting reminders: {str(e)}")
+
+@app.get("/api/reminders/medication/{medication_id}", response_model=APIResponse)
+async def get_reminders_by_medication(medication_id: str):
+    """Get reminders for a specific medication"""
+    try:
+        medication_reminders = [reminder for reminder in reminders_db if reminder.get("medicationId") == medication_id]
+        return APIResponse(
+            success=True,
+            data={"reminders": medication_reminders},
+            message="Medication reminders retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting medication reminders: {str(e)}")
 
 @app.post("/api/reminders", response_model=APIResponse)
 async def add_reminder(reminder: Reminder):
@@ -557,13 +611,47 @@ async def check_symptoms(request: SymptomCheckRequest):
         raise HTTPException(status_code=503, detail="Gemini AI service not available")
     
     try:
-        # Construct prompt for symptom analysis
-        prompt = f"User reports: {request.symptoms}"
+        # Construct focused prompt for direct medical analysis
+        prompt = f"""You are a medical AI assistant. Provide a direct medical analysis and treatment recommendations for the following symptoms:
+
+PATIENT REPORT:
+- Symptoms: {request.symptoms}"""
+        
         if request.severity:
-            prompt += f"\nSeverity: {request.severity}"
+            prompt += f"\n- Severity: {request.severity}"
         if request.duration:
-            prompt += f"\nDuration: {request.duration}"
-        prompt += "\nProvide a professional medical assessment of possible causes and recommendations."
+            prompt += f"\n- Duration: {request.duration}"
+        
+        prompt += """
+
+Provide a DIRECT medical assessment with:
+
+1. DIAGNOSIS ASSESSMENT:
+   - Most likely medical conditions based on symptoms
+   - Primary and secondary diagnoses to consider
+
+2. RECOMMENDED MEDICATIONS:
+   - Specific over-the-counter medications with dosages
+   - Prescription medications that may be needed
+   - Pain management options
+   - Any supplements that could help
+
+3. TREATMENT PLAN:
+   - Immediate relief measures
+   - Short-term treatment (1-3 days)
+   - Long-term management if needed
+   - Lifestyle modifications
+
+4. URGENCY LEVEL:
+   - Whether immediate medical attention is needed
+   - Can wait for regular doctor appointment
+   - Emergency room visit required
+
+5. WARNING SIGNS:
+   - Symptoms that require immediate medical attention
+   - When to seek emergency care
+
+DO NOT ask for more information. Provide direct recommendations based on the symptoms given. Be specific with medication names, dosages, and treatment protocols."""
         
         # Run Gemini request in thread pool
         loop = asyncio.get_event_loop()
@@ -581,7 +669,7 @@ async def check_symptoms(request: SymptomCheckRequest):
                     "analysis": response,
                     "timestamp": datetime.now().isoformat()
                 },
-                message="Symptom analysis completed"
+                message="Medical analysis completed"
             )
         else:
             raise HTTPException(status_code=500, detail="Failed to analyze symptoms")

@@ -50,7 +50,7 @@ if %errorlevel% equ 0 (
     timeout /t 2 /nobreak >nul
 )
 
-start "Ava Backend" /min cmd /c "python api_main.py --port 8000"
+start "Ava Backend" /min cmd /c "python main.py --port 8000"
 
 echo.
 echo [~] Waiting for backend to start...

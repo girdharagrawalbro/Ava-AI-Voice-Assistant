@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, Pause, Play, Square, Plus, Bot, AlertCircle, Pencil, Trash2, Calendar, Pill, HeartPulse, Stethoscope, Download, Sun, Moon, Bell, BellOff } from 'lucide-react';
+import { Volume2, Pause, Play, Square, Plus, Bot, AlertCircle, Pencil, Trash2, Calendar, Pill, HeartPulse, Stethoscope, Download, Sun, Moon, Bell, BellOff, Home } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
 import type {
@@ -23,6 +24,8 @@ import ChatPanel from '../components/ChatPanel';
 import StatusIndicator from '../components/StatusIndicator';
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
+  
   const [appState, setAppState] = useState<AppState>({
     messages: [],
     isListening: false,
@@ -65,6 +68,33 @@ const Dashboard: React.FC = () => {
 
 
 
+  // Load data function
+  const loadData = useCallback(async () => {
+    try {
+      const [
+        medicationsRes,
+        remindersRes,
+        contactsRes,
+        tipsRes
+      ] = await Promise.all([
+        apiService.getMedications(),
+        apiService.getReminders(),
+        apiService.getEmergencyContacts(),
+        apiService.getHealthTips(3)
+      ]);
+
+      setAppState(prev => ({
+        ...prev,
+        medications: medicationsRes,
+        reminders: remindersRes as ReminderResponse[],
+        emergencyContacts: contactsRes as EmergencyContactResponse[],
+        healthTips: tipsRes as HealthTip[]
+      }));
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     const loadInitialData = async () => {
@@ -74,28 +104,14 @@ const Dashboard: React.FC = () => {
         const savedSettings = storage.get(STORAGE_KEYS.SETTINGS) || {};
         const savedTheme = storage.get(STORAGE_KEYS.THEME) || THEMES.LIGHT;
 
-        // Fetch data from API
-        const [
-          medicationsRes,
-          remindersRes,
-          contactsRes,
-          tipsRes
-        ] = await Promise.all([
-          apiService.getMedications(),
-          apiService.getReminders(),
-          apiService.getEmergencyContacts(),
-          apiService.getHealthTips(3)
-        ]);
+        // Load data from API
+        await loadData();
 
         setAppState(prev => ({
           ...prev,
           messages: savedMessages.slice(-MAX_MESSAGES),
           isMuted: savedSettings.isMuted || false,
-          isDarkMode: savedTheme === THEMES.DARK,
-          medications: medicationsRes,
-          reminders: remindersRes as ReminderResponse[],
-          emergencyContacts: contactsRes as EmergencyContactResponse[],
-          healthTips: tipsRes as HealthTip[]
+          isDarkMode: savedTheme === THEMES.DARK
         }));
 
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -105,7 +121,7 @@ const Dashboard: React.FC = () => {
     };
 
     loadInitialData();
-  }, []);
+  }, [loadData]);
 
   // State update helper
   const updateState = useCallback((updates: Partial<AppState>) => {
@@ -279,22 +295,57 @@ const Dashboard: React.FC = () => {
   }, [updateState, appState.isMuted]);
 
 
+  // State for tracking which medication is being edited
+  const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
+
+  // Function to close modal and reset editing state
+  const closeMedicationModal = useCallback(() => {
+    setEditingMedicationId(null);
+    setNewMedication({ name: '', dosage: '', frequency: 'Once daily', time: '08:00' });
+    (document.getElementById('add-medication-modal') as HTMLDialogElement)?.close();
+  }, []);
+
+  // Function to open add medication modal
+  const openAddMedicationModal = useCallback(() => {
+    setEditingMedicationId(null);
+    setNewMedication({ name: '', dosage: '', frequency: 'Once daily', time: '08:00' });
+    (document.getElementById('add-medication-modal') as HTMLDialogElement)?.showModal();
+  }, []);
+
   // Medication management
   const addMedication = useCallback(async () => {
     try {
-      const medication = await apiService.addMedication(newMedication);
-      setAppState(prev => ({
-        ...prev,
-        medications: [...prev.medications, medication]
-      }));
+      if (editingMedicationId) {
+        // Update existing medication
+        const updatedMedication = await apiService.updateMedication(editingMedicationId, newMedication);
+        setAppState(prev => ({
+          ...prev,
+          medications: prev.medications.map(med => 
+            med.id === editingMedicationId ? updatedMedication : med
+          )
+        }));
+        addMessage(`Updated medication: ${updatedMedication.name} ${updatedMedication.dosage} at ${updatedMedication.time}`, false);
+        setEditingMedicationId(null);
+      } else {
+        // Add new medication
+        const medication = await apiService.addMedication(newMedication);
+        setAppState(prev => ({
+          ...prev,
+          medications: [...prev.medications, medication]
+        }));
+        addMessage(`Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`, false);
+      }
+      
       setNewMedication({ name: '', dosage: '', frequency: 'Once daily', time: '08:00' });
-      addMessage(`Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`, false);
-      (document.getElementById('add-medication-modal') as HTMLDialogElement)?.close();
+      closeMedicationModal();
+      
+      // Refresh data to get updated reminders
+      await loadData();
     } catch (error) {
-      console.error('Failed to add medication:', error);
-      addMessage('Failed to add medication. Please try again.', false);
+      console.error('Failed to save medication:', error);
+      addMessage('Failed to save medication. Please try again.', false);
     }
-  }, [newMedication, addMessage]);
+  }, [newMedication, editingMedicationId, addMessage, loadData, closeMedicationModal]);
 
   const getNextMedication = useCallback(() => {
     const now = new Date();
@@ -315,25 +366,63 @@ const Dashboard: React.FC = () => {
       .sort((a, b) => a.timeValue - b.timeValue)[0];
   }, [appState.medications]);
 
+  // Medication management functions
+  const editMedication = useCallback((medication: MedicationResponse) => {
+    setNewMedication({
+      name: medication.name,
+      dosage: medication.dosage,
+      frequency: medication.frequency,
+      time: medication.time
+    });
+    setEditingMedicationId(medication.id);
+    (document.getElementById('add-medication-modal') as HTMLDialogElement)?.showModal();
+  }, []);
+
+  const deleteMedication = useCallback(async (medicationId: string) => {
+    if (!window.confirm('Are you sure you want to delete this medication? This will also delete associated reminders.')) {
+      return;
+    }
+    
+    try {
+      await apiService.deleteMedication(medicationId);
+      setAppState(prev => ({
+        ...prev,
+        medications: prev.medications.filter(med => med.id !== medicationId),
+        reminders: prev.reminders.filter(reminder => reminder.medicationId !== medicationId)
+      }));
+      addMessage('Medication and associated reminders deleted successfully', false);
+      // Refresh data to ensure consistency
+      await loadData();
+    } catch (error) {
+      console.error('Failed to delete medication:', error);
+      addMessage('Failed to delete medication. Please try again.', false);
+    }
+  }, [addMessage, loadData]);
+
   // Symptom checking
   const checkSymptoms = useCallback(async () => {
     if (!symptomCheck.symptoms.trim()) return;
 
     try {
+      // Show analyzing state
       setSymptomResult({
         symptoms: symptomCheck.symptoms,
-        analysis: 'Analyzing symptoms...',
+        analysis: '🔄 Analyzing your symptoms... Please wait for a comprehensive assessment.',
         timestamp: new Date().toISOString()
       });
 
       const response = await apiService.checkSymptoms(symptomCheck);
       setSymptomResult(response);
-      addMessage(`You reported: ${symptomCheck.symptoms}. ${response.analysis}`, false);
+      
+      // Add a message to the chat as well
+      const summaryMessage = `📋 Symptom Analysis Complete for: "${symptomCheck.symptoms}"\n\nCheck the Health Monitoring tab for detailed results.`;
+      addMessage(summaryMessage, false);
+      
     } catch (error) {
       console.error('Symptom check error:', error);
       setSymptomResult({
         symptoms: symptomCheck.symptoms,
-        analysis: 'Failed to analyze symptoms. Please try again.',
+        analysis: '❌ Failed to analyze symptoms. This could be due to:\n\n• Backend service not running\n• Network connectivity issues\n• AI service temporarily unavailable\n\nPlease try again in a few moments or check if the backend server is running.',
         timestamp: new Date().toISOString()
       });
     }
@@ -456,6 +545,13 @@ const Dashboard: React.FC = () => {
       {/* Header */}
       < header className="flex items-center justify-between px-6 py-4 bg-white/80 dark:bg-slate-900/80 shadow-md border-b border-slate-200 dark:border-slate-800 z-20" >
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800 transition-all"
+            title="Go to Home"
+          >
+            <Home size={18} />
+          </button>
           <Bot className="w-7 h-7 text-blue-700 dark:text-blue-300" />
           <h1 className="text-xl font-bold text-blue-700 dark:text-blue-300">Ava Health Assistant</h1>
         </div>
@@ -511,7 +607,7 @@ const Dashboard: React.FC = () => {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-300">Medication Management</h2>
                 <button
-                  onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement)?.showModal()}
+                  onClick={openAddMedicationModal}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-full shadow hover:bg-blue-600 transition-all"
                 >
                   <Plus size={16} /> Add Medication
@@ -543,16 +639,16 @@ const Dashboard: React.FC = () => {
                         </div>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => onEdit(reminder)}
+                            onClick={() => editMedication(med)}
                             className="p-1 rounded-md hover:bg-blue-100 dark:hover:bg-blue-800/50 text-blue-600 dark:text-blue-300"
-                            aria-label="Edit reminder"
+                            aria-label="Edit medication"
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => onDelete(reminder.id)}
+                            onClick={() => deleteMedication(med.id)}
                             className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-300"
-                            aria-label="Delete reminder"
+                            aria-label="Delete medication"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -573,11 +669,33 @@ const Dashboard: React.FC = () => {
                 <h3 className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-4 flex items-center gap-2">
                   <Bell size={18} /> Upcoming Reminders
                 </h3>
-                {appState.medications.length > 0 ? (
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 px-4 py-3 rounded-lg border border-yellow-200 dark:border-yellow-800/50">
-                    <p className="text-yellow-700 dark:text-yellow-300 font-medium">
-                      Next: {getNextMedication()?.name} at {getNextMedication()?.time}
-                    </p>
+                {appState.reminders.length > 0 ? (
+                  <div className="space-y-3">
+                    {appState.reminders.slice(0, 3).map((reminder: ReminderResponse) => {
+                      const medication = appState.medications.find(med => med.id === reminder.medicationId);
+                      return (
+                        <div key={reminder.id} className="bg-yellow-50 dark:bg-yellow-900/20 px-4 py-3 rounded-lg border border-yellow-200 dark:border-yellow-800/50">
+                          <p className="text-yellow-700 dark:text-yellow-300 font-medium">
+                            {reminder.title} at {reminder.schedule}
+                          </p>
+                          {medication && (
+                            <p className="text-yellow-600 dark:text-yellow-400 text-sm mt-1">
+                              {medication.dosage} of {medication.name}
+                            </p>
+                          )}
+                          {reminder.description && (
+                            <p className="text-yellow-600 dark:text-yellow-400 text-xs mt-1">
+                              {reminder.description}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {appState.reminders.length > 3 && (
+                      <p className="text-gray-500 dark:text-gray-400 text-sm text-center">
+                        +{appState.reminders.length - 3} more reminders
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-yellow-50 dark:bg-yellow-900/20 px-4 py-3 rounded-lg border border-dashed border-yellow-200 dark:border-yellow-800/50 text-center">
@@ -603,64 +721,83 @@ const Dashboard: React.FC = () => {
 
               {/* Symptom Checker */}
               <div className="mb-8">
-                <h3 className="text-lg font-medium text-purple-700 dark:text-purple-300 mb-4">Symptom Checker</h3>
+                <h3 className="text-lg font-medium text-purple-700 dark:text-purple-300 mb-4">Medical Symptom Analysis</h3>
                 <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-100 dark:border-purple-800/50">
                   <textarea
                     value={symptomCheck.symptoms}
                     onChange={(e) => setSymptomCheck(prev => ({ ...prev, symptoms: e.target.value }))}
-                    placeholder="Describe your symptoms (e.g., headache, nausea, fever)"
+                    placeholder="Describe your symptoms completely (e.g., I have been experiencing depression for 3 days, headache all day, and leg pain. Please suggest medications and treatment.)"
                     className="w-full px-4 py-3 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 mb-4"
-                    rows={3}
+                    rows={4}
                   />
                   <div className="flex gap-4 mb-4 flex-wrap">
-                    <select
-                      value={symptomCheck.severity}
-                      onChange={(e) => setSymptomCheck(prev => ({ ...prev, severity: e.target.value as any }))}
-                      className="px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
-                    >
-                      <option value="mild">Mild</option>
-                      <option value="moderate">Moderate</option>
-                      <option value="severe">Severe</option>
-                    </select>
-                    <input
-                      type="text"
-                      value={symptomCheck.duration}
-                      onChange={(e) => setSymptomCheck(prev => ({ ...prev, duration: e.target.value }))}
-                      placeholder="Duration (e.g., 2 hours)"
-                      className="flex-1 px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
-                    />
+                    <div className="flex flex-col">
+                      <label className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-1">Severity</label>
+                      <select
+                        value={symptomCheck.severity}
+                        onChange={(e) => setSymptomCheck(prev => ({ ...prev, severity: e.target.value as any }))}
+                        className="px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+                      >
+                        <option value="mild">Mild</option>
+                        <option value="moderate">Moderate</option>
+                        <option value="severe">Severe</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col flex-1">
+                      <label className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-1">Duration</label>
+                      <input
+                        type="text"
+                        value={symptomCheck.duration}
+                        onChange={(e) => setSymptomCheck(prev => ({ ...prev, duration: e.target.value }))}
+                        placeholder="e.g., 2 hours, 3 days, 1 week"
+                        className="px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
+                      />
+                    </div>
                   </div>
                   <button
                     onClick={checkSymptoms}
                     disabled={!symptomCheck.symptoms.trim()}
-                    className="px-4 py-2 bg-purple-500 text-white rounded-lg shadow hover:bg-purple-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-6 py-3 bg-purple-500 text-white rounded-lg shadow hover:bg-purple-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                   >
-                    Analyze Symptoms
+                    💊 Get Medical Analysis & Prescriptions
                   </button>
                   {symptomResult && (
-                    <div className="mt-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-purple-100 dark:border-purple-800/50">
-                      <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-2">Analysis Result:</h4>
-                      <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{symptomResult.analysis}</p>
+                    <div className="mt-6 p-6 bg-white dark:bg-slate-800 rounded-lg border border-purple-100 dark:border-purple-800/50 shadow-sm">
+                      <h4 className="font-semibold text-purple-700 dark:text-purple-300 mb-4 text-lg">🏥 Medical Analysis & Treatment Plan</h4>
+                      <div className="prose dark:prose-invert max-w-none">
+                        <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">
+                          {symptomResult.analysis}
+                        </div>
+                      </div>
                       {symptomResult.possible_causes && (
-                        <div className="mt-3">
-                          <h5 className="font-medium text-purple-600 dark:text-purple-200">Possible Causes:</h5>
-                          <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300">
+                        <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                          <h5 className="font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center gap-2">
+                            🔍 Diagnostic Considerations:
+                          </h5>
+                          <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300 space-y-1">
                             {symptomResult.possible_causes.map((cause, i) => (
-                              <li key={i}>{cause}</li>
+                              <li key={i} className="text-sm">{cause}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       {symptomResult.recommendations && (
-                        <div className="mt-3">
-                          <h5 className="font-medium text-purple-600 dark:text-purple-200">Recommendations:</h5>
-                          <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300">
+                        <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                          <h5 className="font-medium text-green-700 dark:text-green-300 mb-2 flex items-center gap-2">
+                            � Treatment Recommendations:
+                          </h5>
+                          <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300 space-y-1">
                             {symptomResult.recommendations.map((rec, i) => (
-                              <li key={i}>{rec}</li>
+                              <li key={i} className="text-sm">{rec}</li>
                             ))}
                           </ul>
                         </div>
                       )}
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-400">
+                        <p className="text-red-800 dark:text-red-200 text-xs font-medium">
+                          ⚠️ <strong>Medical Disclaimer:</strong> This analysis provides general medical guidance based on reported symptoms. Always consult with a licensed healthcare provider for proper diagnosis, prescription verification, and personalized treatment plans. In case of emergency, contact emergency services immediately.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -678,7 +815,7 @@ const Dashboard: React.FC = () => {
                       transition={{ delay: index * 0.1 }}
                       className="bg-green-50 dark:bg-green-900/20 px-4 py-3 rounded-lg border border-green-100 dark:border-green-800/50"
                     >
-                      <p className="text-green-700 dark:text-green-300">{tip}</p> {/* Access the string directly */}
+                      <p className="text-green-700 dark:text-green-300">{tip.tip}</p>
                     </motion.li>
                   ))}
                 </ul>
@@ -803,9 +940,11 @@ const Dashboard: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Add Medication Modal */}
+        {/* Add/Edit Medication Modal */}
         <dialog id="add-medication-modal" className="bg-white dark:bg-slate-900 rounded-lg shadow-xl p-6 w-full max-w-md">
-          <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-4">Add New Medication</h3>
+          <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-4">
+            {editingMedicationId ? 'Edit Medication' : 'Add New Medication'}
+          </h3>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Medication Name</label>
@@ -852,7 +991,7 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button
-              onClick={() => (document.getElementById('add-medication-modal') as HTMLDialogElement)?.close()}
+              onClick={closeMedicationModal}
               className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-all"
             >
               Cancel
@@ -862,7 +1001,7 @@ const Dashboard: React.FC = () => {
               disabled={!newMedication.name || !newMedication.dosage || !newMedication.time}
               className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add Medication
+              {editingMedicationId ? 'Update Medication' : 'Add Medication'}
             </button>
           </div>
         </dialog>
@@ -948,7 +1087,7 @@ const Dashboard: React.FC = () => {
               <p className="text-gray-700 dark:text-gray-300 mb-4">Select a contact to call:</p>
               <ul className="space-y-2 mb-6 max-h-60 overflow-y-auto">
                 {appState.emergencyContacts.length > 0 ? (
-                  appState.emergencyContacts.map((contact, index) => (
+                  appState.emergencyContacts.map((contact) => (
                     <li key={contact.id} className="flex justify-between items-center bg-red-50 dark:bg-red-900/20 px-4 py-3 rounded-lg border border-red-100 dark:border-red-800/50">
                       <div>
                         <p className="font-medium text-red-700 dark:text-red-300">
