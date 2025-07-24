@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, Pause, Play, Square, Plus, AlertCircle, Calendar, Pill, HeartPulse, Stethoscope, Download, Sun, Moon, Bell, BellOff } from 'lucide-react';
+import { Volume2, Pause, Play, Square, Plus, Bot, AlertCircle, Pencil, Trash2, Calendar, Pill, HeartPulse, Stethoscope, Download, Sun, Moon, Bell, BellOff } from 'lucide-react';
 import { apiService } from '../services/api';
 import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
 import type {
@@ -39,7 +39,7 @@ const Dashboard: React.FC = () => {
     healthTips: []
   });
 
-  const [activeTab, setActiveTab] = useState<'medications' | 'health' | 'chat'>('medications');
+  const [activeTab, setActiveTab] = useState<'medications' | 'health' | 'chat'>('chat');
   const [newMedication, setNewMedication] = useState<Omit<Medication, 'id'>>({
     name: '',
     dosage: '',
@@ -62,6 +62,8 @@ const Dashboard: React.FC = () => {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isProcessingRef = useRef<boolean>(false);
+
+
 
   // Load initial data
   useEffect(() => {
@@ -109,6 +111,7 @@ const Dashboard: React.FC = () => {
   const updateState = useCallback((updates: Partial<AppState>) => {
     setAppState(prev => ({ ...prev, ...updates }));
   }, []);
+
 
   // Chat message handling
   const addMessage = useCallback((text: string, isUser: boolean) => {
@@ -275,6 +278,7 @@ const Dashboard: React.FC = () => {
     }
   }, [updateState, appState.isMuted]);
 
+
   // Medication management
   const addMedication = useCallback(async () => {
     try {
@@ -431,6 +435,7 @@ const Dashboard: React.FC = () => {
     storage.set(STORAGE_KEYS.THEME, newTheme);
   }, [appState.isDarkMode, updateState]);
 
+
   const handleClearChat = useCallback(() => {
     if (window.confirm('Clear chat history?')) {
       updateState({ messages: [] });
@@ -449,9 +454,9 @@ const Dashboard: React.FC = () => {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-950 transition-colors duration-300">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white/80 dark:bg-slate-900/80 shadow-md border-b border-slate-200 dark:border-slate-800 z-20">
+      < header className="flex items-center justify-between px-6 py-4 bg-white/80 dark:bg-slate-900/80 shadow-md border-b border-slate-200 dark:border-slate-800 z-20" >
         <div className="flex items-center gap-3">
-          <img src="/medical-avatar.png" alt="Ava" className="w-10 h-10 rounded-full border-2 border-blue-400" />
+          <Bot className="w-7 h-7 text-blue-700 dark:text-blue-300" />
           <h1 className="text-xl font-bold text-blue-700 dark:text-blue-300">Ava Health Assistant</h1>
         </div>
         <div className="flex items-center gap-3">
@@ -465,12 +470,18 @@ const Dashboard: React.FC = () => {
             <AlertCircle size={18} />
           </button>
         </div>
-      </header>
-
+      </header >
       {/* Main Content */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar Navigation */}
         <nav className="flex md:flex-col items-center justify-around md:justify-start gap-1 p-2 bg-white/70 dark:bg-slate-900/70 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 z-10">
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`p-3 rounded-lg transition-all ${activeTab === 'chat' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
+            title="Chat with Ava"
+          >
+            <Stethoscope size={20} />
+          </button>
           <button
             onClick={() => setActiveTab('medications')}
             className={`p-3 rounded-lg transition-all ${activeTab === 'medications' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
@@ -484,13 +495,6 @@ const Dashboard: React.FC = () => {
             title="Health Monitoring"
           >
             <HeartPulse size={20} />
-          </button>
-          <button
-            onClick={() => setActiveTab('chat')}
-            className={`p-3 rounded-lg transition-all ${activeTab === 'chat' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
-            title="Chat with Ava"
-          >
-            <Stethoscope size={20} />
           </button>
         </nav>
 
@@ -537,6 +541,23 @@ const Dashboard: React.FC = () => {
                           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{med.time}</span>
                           <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 rounded-full">{med.frequency}</span>
                         </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => onEdit(reminder)}
+                            className="p-1 rounded-md hover:bg-blue-100 dark:hover:bg-blue-800/50 text-blue-600 dark:text-blue-300"
+                            aria-label="Edit reminder"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onDelete(reminder.id)}
+                            className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-300"
+                            aria-label="Delete reminder"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
                       </motion.li>
                     ))}
                   </ul>
@@ -591,7 +612,7 @@ const Dashboard: React.FC = () => {
                     className="w-full px-4 py-3 rounded-lg border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 mb-4"
                     rows={3}
                   />
-                  <div className="flex gap-4 mb-4">
+                  <div className="flex gap-4 mb-4 flex-wrap">
                     <select
                       value={symptomCheck.severity}
                       onChange={(e) => setSymptomCheck(prev => ({ ...prev, severity: e.target.value as any }))}
@@ -657,7 +678,7 @@ const Dashboard: React.FC = () => {
                       transition={{ delay: index * 0.1 }}
                       className="bg-green-50 dark:bg-green-900/20 px-4 py-3 rounded-lg border border-green-100 dark:border-green-800/50"
                     >
-                      <p className="text-green-700 dark:text-green-300">{tip.tip}</p>
+                      <p className="text-green-700 dark:text-green-300">{tip}</p> {/* Access the string directly */}
                     </motion.li>
                   ))}
                 </ul>
@@ -756,7 +777,7 @@ const Dashboard: React.FC = () => {
                     ))
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                      <img src="/medical-avatar.png" alt="Ava" className="w-16 h-16 rounded-full mb-4 opacity-80" />
+                      <Bot className="w-16 h-16  mb-4 opacity-80 text-blue-700 dark:text-blue-300" />
                       <p className="text-gray-500 dark:text-gray-400">Hi there! I'm Ava, your health assistant. How can I help you today?</p>
                     </div>
                   )}

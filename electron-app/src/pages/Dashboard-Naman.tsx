@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Volume2, Pause, Play, Square, Home, ArrowLeft } from 'lucide-react';
-import Header from '../components/Header-New';
+import Header from '../components/Header-Home';
 import VoiceInterface from '../components/VoiceInterface';
 import ChatPanel from '../components/ChatPanel'; ``
 import StatusIndicator from '../components/StatusIndicator';

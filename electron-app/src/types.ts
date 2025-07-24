@@ -90,8 +90,10 @@ export interface MedicationListResponse {
 
 // Reminder Types
 export interface Reminder {
-  medication_id: string;
-  reminder_time: string;  // e.g., "08:00"
+  title: string;
+  description?: string;
+  schedule: string;  
+  medicationId: string;
   is_recurring?: boolean;
   days_of_week?: string[];  // ["Monday", "Wednesday", "Friday"]
 }
@@ -144,9 +146,7 @@ export interface SymptomCheckResponse {
 }
 
 export interface HealthTip {
-  id: string;
   tip: string;
-  category?: string;
 }
 
 export interface HealthTipsResponse {
@@ -175,6 +175,11 @@ export interface MurfTTSResponse {
 
 // App State Types
 export type AppStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
+
+export interface HeaderState {
+  isMuted: boolean;
+  isDarkMode: boolean;
+}
 
 export interface AppState {
   messages: Message[];

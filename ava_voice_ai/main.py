@@ -146,8 +146,8 @@ class MedicationResponse(Medication):
     is_active: bool = True
 
 class Reminder(BaseModel):
-    medication_id: str
-    reminder_time: str  # e.g., "08:00"
+    medicationId: str
+    schedule: str  # e.g., "08:00"
     is_recurring: bool = True
     days_of_week: Optional[List[str]] = None  # ["Monday", "Wednesday", "Friday"]
 
@@ -460,6 +460,64 @@ async def add_reminder(reminder: Reminder):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error adding reminder: {str(e)}")
 
+@app.put("/api/reminders/{reminder_id}", response_model=APIResponse)
+async def update_reminder(reminder_id: str, reminder: Reminder):
+    """Update an existing reminder"""
+    try:
+        # Find the reminder in the database
+        reminder_index = None
+        for i, r in enumerate(reminders_db):
+            if r["id"] == reminder_id:
+                reminder_index = i
+                break
+        
+        if reminder_index is None:
+            raise HTTPException(status_code=404, detail="Reminder not found")
+        
+        # Update the reminder
+        updated_reminder = {
+            "id": reminder_id,
+            **reminder.dict()
+        }
+        reminders_db[reminder_index] = updated_reminder
+        
+        return APIResponse(
+            success=True,
+            data={"reminder": updated_reminder},
+            message="Reminder updated successfully"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating reminder: {str(e)}")
+
+@app.delete("/api/reminders/{reminder_id}", response_model=APIResponse)
+async def delete_reminder(reminder_id: str):
+    """Delete an existing reminder"""
+    try:
+        # Find the reminder in the database
+        reminder_index = None
+        for i, r in enumerate(reminders_db):
+            if r["id"] == reminder_id:
+                reminder_index = i
+                break
+        
+        if reminder_index is None:
+            raise HTTPException(status_code=404, detail="Reminder not found")
+        
+        # Remove the reminder
+        deleted_reminder = reminders_db.pop(reminder_index)
+        
+        return APIResponse(
+            success=True,
+            data={"reminder": deleted_reminder},
+            message="Reminder deleted successfully"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting reminder: {str(e)}")
+        
 # Emergency Contact Endpoints
 @app.get("/api/emergency-contacts", response_model=APIResponse)
 async def get_emergency_contacts():
@@ -603,8 +661,10 @@ def run_api_server(host: str = "127.0.0.1", port: int = 8000):
     print(f"   - DELETE http://{host}:{port}/api/medications/{{medication_id}}")
     
     print("\nReminder Endpoints:")
-    print(f"   - GET  http://{host}:{port}/api/reminders")
-    print(f"   - POST http://{host}:{port}/api/reminders")
+    print(f"   - GET    http://{host}:{port}/api/reminders")
+    print(f"   - POST   http://{host}:{port}/api/reminders")
+    print(f"   - PUT    http://{host}:{port}/api/reminders/{{reminder_id}}")
+    print(f"   - DELETE http://{host}:{port}/api/reminders/{{reminder_id}}")
     
     print("\nEmergency Contact Endpoints:")
     print(f"   - GET  http://{host}:{port}/api/emergency-contacts")

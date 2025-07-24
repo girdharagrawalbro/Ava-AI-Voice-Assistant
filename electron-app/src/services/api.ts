@@ -105,54 +105,7 @@ class APIService {
     throw new Error(response.error || 'Text-to-speech conversion failed');
   }
 
-  // Medication Management
-  async getMedications(): Promise<MedicationResponse[]> {
-    const response: APIResponse<{ medications: MedicationResponse[] }> = await this.handleRequest(() =>
-      axios.get(`${this.baseURL}/api/medications`)
-    );
-    
-    if (response.success && response.data?.medications) {
-      return response.data.medications;
-    }
-    
-    throw new Error(response.error || 'Failed to get medications');
-  }
-
-  async addMedication(medication: Medication): Promise<MedicationResponse> {
-    const response: APIResponse<{ medication: MedicationResponse }> = await this.handleRequest(() =>
-      axios.post(`${this.baseURL}/api/medications`, medication)
-    );
-    
-    if (response.success && response.data?.medication) {
-      return response.data.medication;
-    }
-    
-    throw new Error(response.error || 'Failed to add medication');
-  }
-
-  async updateMedication(id: string, medication: Medication): Promise<MedicationResponse> {
-    const response: APIResponse<{ medication: MedicationResponse }> = await this.handleRequest(() =>
-      axios.put(`${this.baseURL}/api/medications/${id}`, medication)
-    );
-    
-    if (response.success && response.data?.medication) {
-      return response.data.medication;
-    }
-    
-    throw new Error(response.error || 'Failed to update medication');
-  }
-
-  async deleteMedication(id: string): Promise<void> {
-    const response: APIResponse = await this.handleRequest(() =>
-      axios.delete(`${this.baseURL}/api/medications/${id}`)
-    );
-    
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to delete medication');
-    }
-  }
-
-  // Reminders
+   // Reminders
   async getReminders(): Promise<ReminderResponse[]> {
     const response: APIResponse<{ reminders: ReminderResponse[] }> = await this.handleRequest(() =>
       axios.get(`${this.baseURL}/api/reminders`)
@@ -176,6 +129,126 @@ class APIService {
     
     throw new Error(response.error || 'Failed to add reminder');
   }
+
+  
+  // Medication Management
+  async getMedications(): Promise<MedicationResponse[]> {
+    const response: APIResponse<{ medications: MedicationResponse[] }> = await this.handleRequest(() =>
+      axios.get(`${this.baseURL}/api/medications`)
+    );
+    
+    if (response.success && response.data?.medications) {
+      return response.data.medications;
+    }
+    
+    throw new Error(response.error || 'Failed to get medications');
+  }
+
+  async updateReminder(id: string, reminder: Reminder): Promise<ReminderResponse> {
+  const response: APIResponse<{ reminder: ReminderResponse }> = await this.handleRequest(() =>
+    axios.put(`${this.baseURL}/api/reminders/${id}`, reminder)
+  );
+  
+  if (response.success && response.data?.reminder) {
+    return response.data.reminder;
+  }
+  
+  throw new Error(response.error || 'Failed to update reminder');
+}
+
+async deleteReminder(id: string): Promise<void> {
+  const response: APIResponse = await this.handleRequest(() =>
+    axios.delete(`${this.baseURL}/api/reminders/${id}`)
+  );
+  
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to delete reminder');
+  }
+}
+
+async addMedication(medication: Medication): Promise<MedicationResponse> {
+  // First add the medication
+  const response: APIResponse<{ medication: MedicationResponse }> = await this.handleRequest(() =>
+    axios.post(`${this.baseURL}/api/medications`, medication)
+  );
+  
+  if (response.success && response.data?.medication) {
+    // Then create a reminder for this medication
+    try {
+      const reminder: Reminder = {
+        title: `Take ${medication.name}`,
+        description: `Time to take your ${medication.dosage} of ${medication.name}`,
+        schedule: medication.time, // Assuming schedule is compatible
+        medicationId: response.data.medication.id // Link to medication
+      };
+      await this.addReminder(reminder);
+    } catch (error) {
+      console.error('Failed to create automatic reminder:', error);
+      // You might want to handle this differently in production
+    }
+    
+    return response.data.medication;
+  }
+  
+  throw new Error(response.error || 'Failed to add medication');
+}
+
+async updateMedication(id: string, medication: Medication): Promise<MedicationResponse> {
+  // First update the medication
+  const response: APIResponse<{ medication: MedicationResponse }> = await this.handleRequest(() =>
+    axios.put(`${this.baseURL}/api/medications/${id}`, medication)
+  );
+  
+  if (response.success && response.data?.medication) {
+    // Then update the associated reminder
+    try {
+      // First get existing reminders for this medication
+      const reminders = await this.getReminders();
+      const medicationReminders = reminders.filter(r => r.medicationId === id);
+      
+      // Update each reminder (assuming a medication might have multiple reminders)
+      for (const reminder of medicationReminders) {
+        const updatedReminder: Reminder = {
+          ...reminder,
+          title: `Take ${medication.name}`,
+          description: `Time to take your ${medication.dosage} of ${medication.name}`,
+          schedule: medication.time
+        };
+        await this.updateReminder(reminder.id, updatedReminder);
+      }
+    } catch (error) {
+      console.error('Failed to update automatic reminders:', error);
+    }
+    
+    return response.data.medication;
+  }
+  
+  throw new Error(response.error || 'Failed to update medication');
+}
+
+async deleteMedication(id: string): Promise<void> {
+  // First delete associated reminders
+  try {
+    const reminders = await this.getReminders();
+    const medicationReminders = reminders.filter(r => r.medicationId === id);
+    
+    for (const reminder of medicationReminders) {
+      await this.deleteReminder(reminder.id);
+    }
+  } catch (error) {
+    console.error('Failed to delete automatic reminders:', error);
+    // You might choose to continue with medication deletion anyway
+  }
+  
+  // Then delete the medication
+  const response: APIResponse = await this.handleRequest(() =>
+    axios.delete(`${this.baseURL}/api/medications/${id}`)
+  );
+  
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to delete medication');
+  }
+}
 
   // Emergency Contacts
   async getEmergencyContacts(): Promise<EmergencyContactResponse[]> {
