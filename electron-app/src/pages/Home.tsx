@@ -1,12 +1,61 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Mic2, Bot, Sparkles, ArrowRight, Volume2, MessageCircle } from 'lucide-react';
+import Header from '../components/Header';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Constants
+  const THEMES = { LIGHT: 'light', DARK: 'dark' };
+  const STORAGE_KEYS = { THEME: 'ava-theme' };
+
+  // Storage utility
+  const storage = {
+    get: (key: string) => {
+      try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : null;
+      } catch {
+        return null;
+      }
+    },
+    set: (key: string, value: any) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch {
+        // Handle storage errors
+      }
+    },
+  };
 
   const handleGetStarted = () => {
+    navigate('/dashboard');
+  };
+
+  // Set dark mode as default for Home page too
+  useEffect(() => {
+    const savedTheme = storage.get(STORAGE_KEYS.THEME) || THEMES.DARK;
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    setIsDarkMode(savedTheme === THEMES.DARK);
+  }, []);
+
+  const handleToggleTheme = () => {
+    const newTheme = isDarkMode ? THEMES.LIGHT : THEMES.DARK;
+    setIsDarkMode(!isDarkMode);
+    document.documentElement.setAttribute('data-theme', newTheme);
+    storage.set(STORAGE_KEYS.THEME, newTheme);
+  };
+
+  const handleToggleMute = () => {
+    setIsMuted(!isMuted);
+  };
+
+  const handleEmergency = () => {
+    alert('Emergency feature - redirecting to dashboard for full functionality');
     navigate('/dashboard');
   };
 
@@ -19,7 +68,7 @@ const Home: React.FC = () => {
           animate={{
             scale: [1, 1.3, 1.1, 1.4, 1],
             rotate: [0, 90, 180, 270, 360],
-            opacity: [0.3, 0.6, 0.4, 0.7, 0.3]
+            opacity: [0.3, 0.6, 0.4, 0.7, 0.3],
           }}
           transition={{ duration: 20, repeat: Infinity }}
         />
@@ -28,32 +77,24 @@ const Home: React.FC = () => {
           animate={{
             scale: [1.2, 1, 1.3, 1.1, 1.2],
             rotate: [360, 270, 180, 90, 0],
-            opacity: [0.2, 0.5, 0.3, 0.6, 0.2]
+            opacity: [0.2, 0.5, 0.3, 0.6, 0.2],
           }}
           transition={{ duration: 25, repeat: Infinity }}
         />
       </div>
 
       {/* Header */}
-      <header className="relative z-10 p-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="flex items-center gap-3"
-        >
-          <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
-            <Bot className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">AVA</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">AI Voice Assistant</p>
-          </div>
-        </motion.div>
-      </header>
+      <Header
+        showControls={true}
+        isDarkMode={isDarkMode}
+        isMuted={isMuted}
+        onToggleTheme={handleToggleTheme}
+        onToggleMute={handleToggleMute}
+        onEmergency={handleEmergency}
+      />
 
       {/* Main Content */}
-      <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-120px)] px-8">
+      <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-120px)] px-8 pt-3">
         {/* Hero Section */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -78,7 +119,8 @@ const Home: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.6 }}
           >
-            Your intelligent voice-powered AI assistant that listens, understands, and responds with natural conversation
+            Your intelligent voice-powered AI assistant that listens, understands, and responds with
+            natural conversation
           </motion.p>
 
           {/* Feature Pills */}
@@ -90,19 +132,27 @@ const Home: React.FC = () => {
           >
             <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <Mic2 className="w-4 h-4 text-blue-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Voice Recognition</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Voice Recognition
+              </span>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <Volume2 className="w-4 h-4 text-purple-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Speech</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                AI Speech
+              </span>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <MessageCircle className="w-4 h-4 text-green-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Natural Conversation</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Natural Conversation
+              </span>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <Sparkles className="w-4 h-4 text-indigo-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Smart Responses</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Smart Responses
+              </span>
             </div>
           </motion.div>
 
