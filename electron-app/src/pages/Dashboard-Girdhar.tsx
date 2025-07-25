@@ -7,21 +7,14 @@ import {
   Square,
   Plus,
   Bot,
-  AlertCircle,
   Pencil,
   Trash2,
   Calendar,
   Pill,
   HeartPulse,
   Stethoscope,
-  Download,
-  Sun,
-  Moon,
   Bell,
-  BellOff,
-  Home,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
 import {
   generateId,
@@ -53,9 +46,9 @@ import type {
 import VoiceInterface from '../components/VoiceInterface';
 import ChatPanel from '../components/ChatPanel';
 import StatusIndicator from '../components/StatusIndicator';
+import Header from '../components/Header';
 
 const Dashboard: React.FC = () => {
-  const navigate = useNavigate();
 
   const [appState, setAppState] = useState<AppState>({
     messages: [],
@@ -605,44 +598,14 @@ const Dashboard: React.FC = () => {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-950 transition-colors duration-300">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white/80 dark:bg-slate-900/80 shadow-md border-b border-slate-200 dark:border-slate-800 z-20">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
-            <Bot className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">AVA</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">AI Voice Assistant</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="p-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800 transition-all"
-            title="Go to Home"
-          >
-            <Home size={18} />
-          </button>
-          <button
-            onClick={handleToggleTheme}
-            className="p-2 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 transition-all"
-          >
-            {appState.isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-          <button
-            onClick={handleToggleMute}
-            className="p-2 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 transition-all"
-          >
-            {appState.isMuted ? <BellOff size={18} /> : <Bell size={18} />}
-          </button>
-          <button
-            onClick={() => setShowEmergencyModal(true)}
-            className="p-2 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800 transition-all"
-          >
-            <AlertCircle size={18} />
-          </button>
-        </div>
-      </header>
+      <Header 
+        showControls={true}
+        isDarkMode={appState.isDarkMode}
+        isMuted={appState.isMuted}
+        onToggleTheme={handleToggleTheme}
+        onToggleMute={handleToggleMute}
+        onEmergency={() => setShowEmergencyModal(true)}
+      />
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
