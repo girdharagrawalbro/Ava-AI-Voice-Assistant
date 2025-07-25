@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Volume2, Pause, Play, Square, Plus, Bot, AlertCircle, Pencil, Trash2, Calendar, Pill, HeartPulse, Stethoscope, Download, Sun, Moon, Bell, BellOff, Home } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
+import ConnectionStatus from '../components/ConnectionStatus';
+import { useNotification } from '../components/NotificationProvider';
 import { generateId, formatMessage, playAudio, stopAudio, pauseAudio, resumeAudio, storage, STORAGE_KEYS, THEMES, MAX_MESSAGES } from '../utils';
 import type {
   Message,
@@ -20,11 +22,11 @@ import type {
 
 // Components
 import VoiceInterface from '../components/VoiceInterface';
-import ChatPanel from '../components/ChatPanel';
 import StatusIndicator from '../components/StatusIndicator';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   const [appState, setAppState] = useState<AppState>({
     messages: [],
@@ -90,10 +92,27 @@ const Dashboard: React.FC = () => {
         emergencyContacts: contactsRes as EmergencyContactResponse[],
         healthTips: tipsRes as HealthTip[]
       }));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load data:', error);
+      
+      // Show notification for data loading issues
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Using Offline Mode',
+          message: 'Backend server is unavailable. Using direct database connection.',
+          duration: 4000
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Data Loading Failed',
+          message: 'Some data may not be available. Please check your connection.',
+          duration: 5000
+        });
+      }
     }
-  }, []);
+  }, [addNotification]);
 
   // Load initial data
   useEffect(() => {
@@ -149,7 +168,13 @@ const Dashboard: React.FC = () => {
 
   // Voice recognition
   const startListening = useCallback(async () => {
-    if (appState.isListening || isProcessingRef.current) return;
+    if (isProcessingRef.current) return;
+    
+    // If already listening, stop and process any partial text
+    if (appState.isListening) {
+      await stopListening();
+      return;
+    }
 
     isProcessingRef.current = true;
     try {
@@ -173,15 +198,49 @@ const Dashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Voice input error:', error);
-      updateState({ status: 'error' });
+      
+      // Check if it was manually cancelled (user clicked mic again)
+      if (error.name === 'AbortError' || error.message?.includes('cancelled') || abortControllerRef.current?.signal.aborted) {
+        // Don't show error message for manual cancellation
+        updateState({ status: 'idle' });
+      } else {
+        updateState({ status: 'error' });
 
-      const errorMessage = error.message?.includes('Network error')
-        ? 'Cannot connect to voice service. Please check if the backend is running.'
-        : error.message?.includes('timeout') || error.message?.includes('TIMEOUT')
-          ? 'Voice recognition timed out. Please try again.'
-          : `Voice recognition error: ${error.message}`;
+        const errorMessage = error.message?.includes('Network error')
+          ? 'Cannot connect to voice service. Please check if the backend is running.'
+          : error.message?.includes('timeout') || error.message?.includes('TIMEOUT')
+            ? 'Voice recognition timed out. Try speaking more clearly or check your microphone.'
+            : `Voice recognition error: ${error.message}`;
 
-      addMessage(errorMessage, false);
+        addMessage(errorMessage, false);
+        
+        // Add notification for voice recognition errors
+        if (error.message?.includes('Supabase')) {
+          addNotification({
+            type: 'warning',
+            title: 'Voice Recognition Offline',
+            message: 'Voice recognition using offline mode. Some features may be limited.'
+          });
+        } else if (error.message?.includes('Network error')) {
+          addNotification({
+            type: 'error',
+            title: 'Connection Error',
+            message: 'Cannot connect to voice service. Check backend status.'
+          });
+        } else if (error.message?.includes('timeout')) {
+          addNotification({
+            type: 'warning',
+            title: 'Voice Timeout',
+            message: 'Voice recognition timed out. Please try again.'
+          });
+        } else {
+          addNotification({
+            type: 'error',
+            title: 'Voice Recognition Failed',
+            message: 'Unable to process voice input. Please try again.'
+          });
+        }
+      }
     } finally {
       updateState({ isListening: false });
       if (appState.status !== 'speaking' && appState.status !== 'processing') {
@@ -189,7 +248,7 @@ const Dashboard: React.FC = () => {
       }
       isProcessingRef.current = false;
     }
-  }, [appState.isListening, appState.status, addMessage, updateState]);
+  }, [appState.isListening, appState.status, addMessage, updateState, addNotification]);
 
   const stopListening = useCallback(async () => {
     if (!appState.isListening) return;
@@ -198,7 +257,8 @@ const Dashboard: React.FC = () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      await apiService.stopVoiceRecognition();
+      // Note: We don't call apiService.stopVoiceRecognition() here as it might not exist
+      // The abort controller should handle stopping the request
     } catch (error) {
       console.error('Stop listening error:', error);
     } finally {
@@ -239,11 +299,26 @@ const Dashboard: React.FC = () => {
 
     } catch (error: any) {
       console.error('AI response error:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'AI Response Offline',
+          message: 'AI response generated using offline mode. Some features may be limited.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'AI Response Failed',
+          message: 'Unable to generate AI response. Please try again.'
+        });
+      }
+      
       addMessage(`Sorry, I encountered an error. Please try again.`, false);
       updateState({ status: 'error' });
       setTimeout(() => updateState({ status: 'idle' }), 2000);
     }
-  }, [addMessage, appState.isMuted, updateState]);
+  }, [addMessage, appState.isMuted, updateState, addNotification]);
 
   // Text-to-speech
   const generateSpeech = useCallback(async (text: string, messageId: string) => {
@@ -255,17 +330,27 @@ const Dashboard: React.FC = () => {
         voice_id: 'en-US-terrell'
       });
 
+      console.log('TTS Response:', response); // Debug log
+
       if (response.audio_url) {
+        const fullAudioUrl = response.audio_url.startsWith('http') 
+          ? response.audio_url 
+          : `http://127.0.0.1:8000${response.audio_url}`;
+
+        console.log('Setting audio URL:', fullAudioUrl); // Debug log
+
         setAppState(prev => ({
           ...prev,
           messages: prev.messages.map(msg =>
-            msg.id === messageId ? { ...msg, audioUrl: response.audio_url } : msg
+            msg.id === messageId ? { ...msg, audioUrl: fullAudioUrl } : msg
           )
         }));
 
+        console.log('Audio URL set:', fullAudioUrl); // Debug log
+
         if (!appState.isMuted) {
-          const audio = await playAudio(response.audio_url);
-          updateState({ currentAudio: audio, currentAudioUrl: response.audio_url });
+          const audio = await playAudio(fullAudioUrl);
+          updateState({ currentAudio: audio, currentAudioUrl: fullAudioUrl });
 
           audio.onended = () => {
             updateState({
@@ -277,7 +362,8 @@ const Dashboard: React.FC = () => {
             });
           };
 
-          audio.onerror = () => {
+          audio.onerror = (error) => {
+            console.error('Audio playback error:', error);
             updateState({
               isSpeaking: false,
               status: 'idle',
@@ -286,13 +372,39 @@ const Dashboard: React.FC = () => {
               isPaused: false
             });
           };
+        } else {
+          // If muted, just update the speaking state
+          updateState({ isSpeaking: false, status: 'idle' });
+        }
+      } else {
+        console.log('No audio URL in response, checking for fallback'); // Debug log
+        if (response.fallback) {
+          console.log('Using fallback TTS');
+          updateState({ isSpeaking: false, status: 'idle' });
+        } else {
+          throw new Error('No audio URL received');
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Speech generation error:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Speech Generation Offline',
+          message: 'Text-to-speech using fallback mode. Voice quality may vary.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Speech Generation Failed',
+          message: 'Unable to generate speech. Audio playback unavailable.'
+        });
+      }
+      
       updateState({ isSpeaking: false, status: 'idle' });
     }
-  }, [updateState, appState.isMuted]);
+  }, [updateState, appState.isMuted, addNotification]);
 
 
   // State for tracking which medication is being edited
@@ -325,6 +437,11 @@ const Dashboard: React.FC = () => {
           )
         }));
         addMessage(`Updated medication: ${updatedMedication.name} ${updatedMedication.dosage} at ${updatedMedication.time}`, false);
+        addNotification({
+          type: 'success',
+          title: 'Medication Updated',
+          message: `${updatedMedication.name} has been updated successfully.`
+        });
         setEditingMedicationId(null);
       } else {
         // Add new medication
@@ -334,6 +451,11 @@ const Dashboard: React.FC = () => {
           medications: [...prev.medications, medication]
         }));
         addMessage(`Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`, false);
+        addNotification({
+          type: 'success',
+          title: 'Medication Added',
+          message: `${medication.name} has been added to your medication list.`
+        });
       }
 
       setNewMedication({ name: '', dosage: '', frequency: 'Once daily', time: '08:00' });
@@ -341,11 +463,26 @@ const Dashboard: React.FC = () => {
 
       // Refresh data to get updated reminders
       await loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save medication:', error);
-      addMessage('Failed to save medication. Please try again.', false);
+      
+      // Show appropriate error notification
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Saved in Offline Mode',
+          message: 'Medication saved directly to database. Sync when backend is available.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Save Failed',
+          message: 'Failed to save medication. Please try again.'
+        });
+        addMessage('Failed to save medication. Please try again.', false);
+      }
     }
-  }, [newMedication, editingMedicationId, addMessage, loadData, closeMedicationModal]);
+  }, [newMedication, editingMedicationId, addMessage, loadData, closeMedicationModal, addNotification]);
 
   const getNextMedication = useCallback(() => {
     const now = new Date();
@@ -391,13 +528,32 @@ const Dashboard: React.FC = () => {
         reminders: prev.reminders.filter(reminder => reminder.medicationId !== medicationId)
       }));
       addMessage('Medication and associated reminders deleted successfully', false);
+      addNotification({
+        type: 'success',
+        title: 'Medication Deleted',
+        message: 'Medication and associated reminders have been removed.'
+      });
       // Refresh data to ensure consistency
       await loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete medication:', error);
-      addMessage('Failed to delete medication. Please try again.', false);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Deleted in Offline Mode',
+          message: 'Medication deleted from local database. Sync when backend is available.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Delete Failed',
+          message: 'Failed to delete medication. Please try again.'
+        });
+        addMessage('Failed to delete medication. Please try again.', false);
+      }
     }
-  }, [addMessage, loadData]);
+  }, [addMessage, loadData, addNotification]);
 
   // Symptom checking
   const checkSymptoms = useCallback(async () => {
@@ -418,15 +574,30 @@ const Dashboard: React.FC = () => {
       const summaryMessage = `📋 Symptom Analysis Complete for: "${symptomCheck.symptoms}"\n\nCheck the Health Monitoring tab for detailed results.`;
       addMessage(summaryMessage, false);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Symptom check error:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Analysis Completed Offline',
+          message: 'Symptom analysis completed using local database. Some features may be limited.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Analysis Failed',
+          message: 'Could not analyze symptoms. Please check your connection and try again.'
+        });
+      }
+      
       setSymptomResult({
         symptoms: symptomCheck.symptoms,
         analysis: '❌ Failed to analyze symptoms. This could be due to:\n\n• Backend service not running\n• Network connectivity issues\n• AI service temporarily unavailable\n\nPlease try again in a few moments or check if the backend server is running.',
         timestamp: new Date().toISOString()
       });
     }
-  }, [symptomCheck, addMessage]);
+  }, [symptomCheck, addMessage, addNotification]);
 
   // Emergency contacts
   const addEmergencyContact = useCallback(async () => {
@@ -442,11 +613,30 @@ const Dashboard: React.FC = () => {
         relationship: 'Doctor',
         is_primary: false
       });
+      addNotification({
+        type: 'success',
+        title: 'Emergency Contact Added',
+        message: `${contact.name} has been added to your emergency contacts.`
+      });
       (document.getElementById('add-contact-modal') as HTMLDialogElement)?.close();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add emergency contact:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Contact Saved in Offline Mode',
+          message: 'Emergency contact saved directly to database. Sync when backend is available.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Failed to Add Contact',
+          message: 'Failed to add emergency contact. Please try again.'
+        });
+      }
     }
-  }, [newEmergencyContact]);
+  }, [newEmergencyContact, addNotification]);
 
   const triggerEmergency = useCallback((contactId: string) => {
     const contact = appState.emergencyContacts.find(c => c.id === contactId);
@@ -524,14 +714,6 @@ const Dashboard: React.FC = () => {
     storage.set(STORAGE_KEYS.THEME, newTheme);
   }, [appState.isDarkMode, updateState]);
 
-
-  const handleClearChat = useCallback(() => {
-    if (window.confirm('Clear chat history?')) {
-      updateState({ messages: [] });
-      storage.remove(STORAGE_KEYS.MESSAGES);
-    }
-  }, [updateState]);
-
   // Cleanup
   useEffect(() => {
     return () => {
@@ -552,6 +734,7 @@ const Dashboard: React.FC = () => {
           <h1 className="text-xl font-bold text-blue-700 dark:text-blue-300">Ava Health Assistant</h1>
         </div>
         <div className="flex items-center gap-3">
+          <ConnectionStatus />
           <button
             onClick={() => navigate('/')}
             className="p-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800 transition-all"
@@ -884,14 +1067,19 @@ const Dashboard: React.FC = () => {
                               handlePlayAudio(message.audioUrl!);
                             }
                           }}
-                          className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${appState.currentAudioUrl === message.audioUrl && appState.isPaused ? 'bg-yellow-500 hover:bg-yellow-600' :
-                            appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? 'bg-purple-500 hover:bg-purple-600' :
-                              'bg-blue-500 hover:bg-blue-600'
+                          className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${
+                            appState.currentAudioUrl === message.audioUrl && appState.isPaused 
+                              ? 'bg-yellow-500 hover:bg-yellow-600' 
+                              : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking 
+                                ? 'bg-purple-500 hover:bg-purple-600' 
+                                : 'bg-blue-500 hover:bg-blue-600'
                             }`}
                           title={
-                            appState.currentAudioUrl === message.audioUrl && appState.isPaused ? "Resume audio" :
-                              appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? "Pause audio" :
-                                "Play audio response"
+                            appState.currentAudioUrl === message.audioUrl && appState.isPaused 
+                              ? "Resume audio" 
+                              : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking 
+                                ? "Pause audio" 
+                                : "Play audio response"
                           }
                         >
                           {appState.currentAudioUrl === message.audioUrl && appState.isPaused ? (
@@ -918,6 +1106,21 @@ const Dashboard: React.FC = () => {
                             <Square className="w-3 h-3" />
                           </motion.button>
                         )}
+                      </div>
+                    )}
+                    {!message.isUser && message.audioUrl && appState.isMuted && (
+                      <div className="flex items-center gap-2">
+                        <motion.button
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => {
+                            alert('Audio is muted. Click the bell icon in the header to unmute and play audio.');
+                          }}
+                          className="p-2 rounded-full text-white bg-gray-400 hover:bg-gray-500 transition-colors shadow-lg hover:shadow-xl"
+                          title="Audio is muted - click bell icon to unmute"
+                        >
+                          <BellOff className="w-4 h-4" />
+                        </motion.button>
                       </div>
                     )}
                   </div>

@@ -58,7 +58,7 @@ const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
   const getStatusLabel = () => {
     switch (voiceState) {
       case 'listening':
-        return '🎤 Listening...';
+        return '🎤 Listening... (click mic to stop & send)';
       case 'speaking':
         return '🔊 Speaking...';
       case 'paused':
@@ -147,6 +147,13 @@ const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
           whileTap={{ scale: isDisabled ? 1 : 0.95 }}
           onClick={handleMicrophoneClick}
           disabled={isDisabled}
+          title={
+            voiceState === 'listening' 
+              ? "Click to stop listening and process speech" 
+              : voiceState === 'speaking' 
+                ? "Ava is speaking" 
+                : "Click to start voice recognition"
+          }
           className={classNames(
             'relative w-28 h-28 rounded-full transition-all duration-200 focus:outline-none focus:ring-4',
             'shadow-2xl backdrop-blur-sm border-2 overflow-hidden',

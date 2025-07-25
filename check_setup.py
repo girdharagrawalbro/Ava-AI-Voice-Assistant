@@ -56,7 +56,7 @@ def check_env_file():
     print("✅ .env file exists")
     
     # Check for required environment variables
-    required_keys = ['GOOGLE_API_KEY', 'MURF_API_KEY']
+    required_keys = ['GEMINI_API_KEY', 'MURF_API_KEY']
     
     with open(env_file, 'r') as f:
         content = f.read()

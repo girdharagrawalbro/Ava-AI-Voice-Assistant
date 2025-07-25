@@ -1,9 +1,9 @@
-# 🤖 Ava – Conversational Voice AI Desktop App
+# 🤖 Ava – Conversational Voice AI Desktop App with Database Integration
 
-> **🎉 Now available with modern Electron + TypeScript frontend!**  
+> **🎉 Now available with modern Electron + TypeScript frontend and Supabase database!**  
 > See `../electron-app/` for the new React-based desktop interface.
 
-A sleek desktop application that combines voice recognition, AI conversation, and natural text-to-speech for an engaging voice assistant experience.
+A comprehensive desktop application that combines voice recognition, AI conversation, natural text-to-speech, and robust data persistence for a complete voice assistant experience with medication management, health tracking, and more.
 
 ## 🖥️ Choose Your Interface
 
@@ -19,15 +19,40 @@ A sleek desktop application that combines voice recognition, AI conversation, an
 - **Features**: Simple setup, Python-native
 - **Usage**: `python main.py`
 
-## ✨ Features
+## ✨ Core Features
 
-- 🎙️ **Voice Input**: Advanced speech recognition using SpeechRecognition
-- 🧠 **AI Conversations**: Powered by Google Gemini for intelligent responses  
-- 🔊 **Natural Voice Output**: High-quality text-to-speech using Murf TTS
-- 🪟 **Modern Desktop UI**: Beautiful interface (Electron) or Python Flet
-- 💬 **Real-time Chat**: Visual conversation history with timestamps
-- 🔇 **Audio Controls**: Mute/unmute functionality
-- 🧹 **Chat Management**: Clear conversation history
+### 🎙️ Voice & AI Capabilities
+- **Voice Input**: Advanced speech recognition using SpeechRecognition
+- **AI Conversations**: Powered by Google Gemini for intelligent responses  
+- **Natural Voice Output**: High-quality text-to-speech using Murf TTS
+- **Real-time Chat**: Visual conversation history with timestamps
+
+### 🏥 Health & Medication Management
+- **Medication Tracking**: Add, edit, and manage medications with dosages and schedules
+- **Smart Reminders**: Automatic medication reminders with flexible scheduling
+- **Health Records**: Track vital signs, symptoms, and health data
+- **AI Symptom Analysis**: Get AI-powered health insights and recommendations
+- **Emergency Contacts**: Manage emergency contact information
+
+### 📊 Data Persistence
+- **Supabase Database**: Secure cloud database with real-time sync
+- **Offline Fallback**: Continues working without internet connection
+- **Data Security**: Row-level security and encrypted data storage
+- **Chat History**: Persistent conversation history across sessions
+
+## 🗄️ Database Features
+
+The application now includes comprehensive database integration with the following tables:
+- **Users** - User profiles and preferences
+- **Medications** - Medication management with detailed tracking
+- **Medication Logs** - Track when medications were taken
+- **Reminders** - Smart reminders for medications and appointments
+- **Emergency Contacts** - Emergency contact management
+- **Health Records** - Store health data and measurements
+- **Symptom Checks** - AI-powered symptom analysis history
+- **Chat Sessions & Messages** - Conversation history tracking
+- **Audio Files** - Audio file management and metadata
+- **Health Tips** - Personalized health tips system
 - ⚡ **Responsive Design**: Non-blocking UI with threaded operations
 
 ## 🏗️ Architecture
@@ -73,7 +98,7 @@ cp .env.example .env
 
 2. Edit `.env` with your API keys:
 ```env
-GOOGLE_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 MURF_API_KEY=your_murf_api_key_here
 ```
 
