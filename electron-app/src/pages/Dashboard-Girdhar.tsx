@@ -948,7 +948,7 @@ const Dashboard: React.FC = () => {
         />
         <StatusIndicator status={appState.status} />
       </div>
-    </motion.section>
+    </motion.section>got 
   )}
 </AnimatePresence>
 
