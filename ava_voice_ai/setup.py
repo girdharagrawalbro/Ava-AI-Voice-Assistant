@@ -88,7 +88,7 @@ def main():
         print("🎉 Setup completed successfully!")
         print("\n📋 Next steps:")
         print("1. Edit .env file and add your API keys:")
-        print("   - GOOGLE_API_KEY (from Google AI Studio)")
+        print("   - GEMINI_API_KEY (from Google AI Studio)")
         print("   - MURF_API_KEY (from Murf.ai)")
         print("2. Run the application: python main.py")
     else:

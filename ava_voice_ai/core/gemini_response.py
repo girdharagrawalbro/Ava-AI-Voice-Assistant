@@ -15,10 +15,10 @@ load_dotenv()
 
 class GeminiResponse:
     def __init__(self):
-        self.api_key = os.getenv('GOOGLE_API_KEY')
+        self.api_key = os.getenv('GEMINI_API_KEY')
         
         if not self.api_key:
-            raise ValueError("GOOGLE_API_KEY not found in environment variables. Please check your .env file.")
+            raise ValueError("GEMINI_API_KEY not found in environment variables. Please check your .env file.")
         
         # Configure the Gemini API
         genai.configure(api_key=self.api_key)
@@ -223,6 +223,6 @@ if __name__ == "__main__":
         
     except ValueError as e:
         print(f"❌ Configuration error: {e}")
-        print("Make sure to set your GOOGLE_API_KEY in the .env file!")
+        print("Make sure to set your GEMINI_API_KEY in the .env file!")
     except Exception as e:
         print(f"❌ Unexpected error: {e}")

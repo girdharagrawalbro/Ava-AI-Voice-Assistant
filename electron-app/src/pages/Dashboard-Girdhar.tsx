@@ -51,11 +51,11 @@ import type {
 
 // Components
 import VoiceInterface from '../components/VoiceInterface';
-import ChatPanel from '../components/ChatPanel';
 import StatusIndicator from '../components/StatusIndicator';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   const [appState, setAppState] = useState<AppState>({
     messages: [],
@@ -116,10 +116,27 @@ const Dashboard: React.FC = () => {
         emergencyContacts: contactsRes as EmergencyContactResponse[],
         healthTips: tipsRes as HealthTip[],
       }));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load data:', error);
+      
+      // Show notification for data loading issues
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Using Offline Mode',
+          message: 'Backend server is unavailable. Using direct database connection.',
+          duration: 4000
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Data Loading Failed',
+          message: 'Some data may not be available. Please check your connection.',
+          duration: 5000
+        });
+      }
     }
-  }, []);
+  }, [addNotification]);
 
   // Load initial data
   useEffect(() => {
@@ -181,7 +198,13 @@ const Dashboard: React.FC = () => {
 
   // Voice recognition
   const startListening = useCallback(async () => {
-    if (appState.isListening || isProcessingRef.current) return;
+    if (isProcessingRef.current) return;
+    
+    // If already listening, stop and process any partial text
+    if (appState.isListening) {
+      await stopListening();
+      return;
+    }
 
     isProcessingRef.current = true;
     try {
@@ -205,15 +228,49 @@ const Dashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Voice input error:', error);
-      updateState({ status: 'error' });
+      
+      // Check if it was manually cancelled (user clicked mic again)
+      if (error.name === 'AbortError' || error.message?.includes('cancelled') || abortControllerRef.current?.signal.aborted) {
+        // Don't show error message for manual cancellation
+        updateState({ status: 'idle' });
+      } else {
+        updateState({ status: 'error' });
 
-      const errorMessage = error.message?.includes('Network error')
-        ? 'Cannot connect to voice service. Please check if the backend is running.'
-        : error.message?.includes('timeout') || error.message?.includes('TIMEOUT')
-          ? 'Voice recognition timed out. Please try again.'
-          : `Voice recognition error: ${error.message}`;
+        const errorMessage = error.message?.includes('Network error')
+          ? 'Cannot connect to voice service. Please check if the backend is running.'
+          : error.message?.includes('timeout') || error.message?.includes('TIMEOUT')
+            ? 'Voice recognition timed out. Try speaking more clearly or check your microphone.'
+            : `Voice recognition error: ${error.message}`;
 
-      addMessage(errorMessage, false);
+        addMessage(errorMessage, false);
+        
+        // Add notification for voice recognition errors
+        if (error.message?.includes('Supabase')) {
+          addNotification({
+            type: 'warning',
+            title: 'Voice Recognition Offline',
+            message: 'Voice recognition using offline mode. Some features may be limited.'
+          });
+        } else if (error.message?.includes('Network error')) {
+          addNotification({
+            type: 'error',
+            title: 'Connection Error',
+            message: 'Cannot connect to voice service. Check backend status.'
+          });
+        } else if (error.message?.includes('timeout')) {
+          addNotification({
+            type: 'warning',
+            title: 'Voice Timeout',
+            message: 'Voice recognition timed out. Please try again.'
+          });
+        } else {
+          addNotification({
+            type: 'error',
+            title: 'Voice Recognition Failed',
+            message: 'Unable to process voice input. Please try again.'
+          });
+        }
+      }
     } finally {
       updateState({ isListening: false });
       if (appState.status !== 'speaking' && appState.status !== 'processing') {
@@ -221,7 +278,7 @@ const Dashboard: React.FC = () => {
       }
       isProcessingRef.current = false;
     }
-  }, [appState.isListening, appState.status, addMessage, updateState]);
+  }, [appState.isListening, appState.status, addMessage, updateState, addNotification]);
 
   const stopListening = useCallback(async () => {
     if (!appState.isListening) return;
@@ -230,7 +287,8 @@ const Dashboard: React.FC = () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      await apiService.stopVoiceRecognition();
+      // Note: We don't call apiService.stopVoiceRecognition() here as it might not exist
+      // The abort controller should handle stopping the request
     } catch (error) {
       console.error('Stop listening error:', error);
     } finally {
@@ -280,61 +338,123 @@ const Dashboard: React.FC = () => {
         updateState({ status: 'error' });
         setTimeout(() => updateState({ status: 'idle' }), 2000);
       }
-    },
-    [addMessage, appState.isMuted, updateState]
-  );
+
+      // Default AI response
+      const response = await apiService.getGeminiResponse({ text: userText });
+      const aiMessage = addMessage(response.response, false);
+      if (!appState.isMuted) await generateSpeech(response.response, aiMessage.id);
+
+    } catch (error: any) {
+      console.error('AI response error:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'AI Response Offline',
+          message: 'AI response generated using offline mode. Some features may be limited.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'AI Response Failed',
+          message: 'Unable to generate AI response. Please try again.'
+        });
+      }
+      
+      addMessage(`Sorry, I encountered an error. Please try again.`, false);
+      updateState({ status: 'error' });
+      setTimeout(() => updateState({ status: 'idle' }), 2000);
+    }
+  }, [addMessage, appState.isMuted, updateState, addNotification]);
 
   // Text-to-speech
-  const generateSpeech = useCallback(
-    async (text: string, messageId: string) => {
-      try {
-        updateState({ status: 'speaking', isSpeaking: true });
+  const generateSpeech = useCallback(async (text: string, messageId: string) => {
+    try {
+      updateState({ status: 'speaking', isSpeaking: true });
 
-        const response = await apiService.generateSpeech({
-          text,
-          voice_id: 'en-US-terrell',
-        });
+      const response = await apiService.generateSpeech({
+        text,
+        voice_id: 'en-US-terrell'
+      });
 
-        if (response.audio_url) {
-          setAppState(prev => ({
-            ...prev,
-            messages: prev.messages.map(msg =>
-              msg.id === messageId ? { ...msg, audioUrl: response.audio_url } : msg
-            ),
-          }));
+      console.log('TTS Response:', response); // Debug log
 
-          if (!appState.isMuted) {
-            const audio = await playAudio(response.audio_url);
-            updateState({ currentAudio: audio, currentAudioUrl: response.audio_url });
+      if (response.audio_url) {
+        const fullAudioUrl = response.audio_url.startsWith('http') 
+          ? response.audio_url 
+          : `http://127.0.0.1:8000${response.audio_url}`;
 
-            audio.onended = () => {
-              updateState({
-                isSpeaking: false,
-                status: 'idle',
-                currentAudio: undefined,
-                currentAudioUrl: undefined,
-                isPaused: false,
-              });
-            };
+        console.log('Setting audio URL:', fullAudioUrl); // Debug log
 
-            audio.onerror = () => {
-              updateState({
-                isSpeaking: false,
-                status: 'idle',
-                currentAudio: undefined,
-                currentAudioUrl: undefined,
-                isPaused: false,
-              });
-            };
-          }
+        setAppState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg =>
+            msg.id === messageId ? { ...msg, audioUrl: fullAudioUrl } : msg
+          )
+        }));
+
+        console.log('Audio URL set:', fullAudioUrl); // Debug log
+
+        if (!appState.isMuted) {
+          const audio = await playAudio(fullAudioUrl);
+          updateState({ currentAudio: audio, currentAudioUrl: fullAudioUrl });
+
+          audio.onended = () => {
+            updateState({
+              isSpeaking: false,
+              status: 'idle',
+              currentAudio: undefined,
+              currentAudioUrl: undefined,
+              isPaused: false
+            });
+          };
+
+          audio.onerror = (error) => {
+            console.error('Audio playback error:', error);
+            updateState({
+              isSpeaking: false,
+              status: 'idle',
+              currentAudio: undefined,
+              currentAudioUrl: undefined,
+              isPaused: false
+            });
+          };
+        } else {
+          // If muted, just update the speaking state
+          updateState({ isSpeaking: false, status: 'idle' });
+        }
+      } else {
+        console.log('No audio URL in response, checking for fallback'); // Debug log
+        if (response.fallback) {
+          console.log('Using fallback TTS');
+          updateState({ isSpeaking: false, status: 'idle' });
+        } else {
+          throw new Error('No audio URL received');
         }
       } catch (error) {
         console.error('Speech generation error:', error);
         updateState({ isSpeaking: false, status: 'idle' });
       }
-    },
-    [updateState, appState.isMuted]
-  );
+    } catch (error: any) {
+      console.error('Speech generation error:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Speech Generation Offline',
+          message: 'Text-to-speech using fallback mode. Voice quality may vary.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Speech Generation Failed',
+          message: 'Unable to generate speech. Audio playback unavailable.'
+        });
+      }
+      
+      updateState({ isSpeaking: false, status: 'idle' });
+    }
+  }, [updateState, appState.isMuted, addNotification]);
 
   // State for tracking which medication is being edited
   const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
@@ -368,10 +488,12 @@ const Dashboard: React.FC = () => {
             med.id === editingMedicationId ? updatedMedication : med
           ),
         }));
-        addMessage(
-          `Updated medication: ${updatedMedication.name} ${updatedMedication.dosage} at ${updatedMedication.time}`,
-          false
-        );
+        addMessage(`Updated medication: ${updatedMedication.name} ${updatedMedication.dosage} at ${updatedMedication.time}`, false);
+        addNotification({
+          type: 'success',
+          title: 'Medication Updated',
+          message: `${updatedMedication.name} has been updated successfully.`
+        });
         setEditingMedicationId(null);
       } else {
         // Add new medication
@@ -380,10 +502,12 @@ const Dashboard: React.FC = () => {
           ...prev,
           medications: [...prev.medications, medication],
         }));
-        addMessage(
-          `Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`,
-          false
-        );
+        addMessage(`Added medication: ${medication.name} ${medication.dosage} at ${medication.time}`, false);
+        addNotification({
+          type: 'success',
+          title: 'Medication Added',
+          message: `${medication.name} has been added to your medication list.`
+        });
       }
 
       setNewMedication({ name: '', dosage: '', frequency: 'Once daily', time: '08:00' });
@@ -391,11 +515,26 @@ const Dashboard: React.FC = () => {
 
       // Refresh data to get updated reminders
       await loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save medication:', error);
-      addMessage('Failed to save medication. Please try again.', false);
+      
+      // Show appropriate error notification
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Saved in Offline Mode',
+          message: 'Medication saved directly to database. Sync when backend is available.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Save Failed',
+          message: 'Failed to save medication. Please try again.'
+        });
+        addMessage('Failed to save medication. Please try again.', false);
+      }
     }
-  }, [newMedication, editingMedicationId, addMessage, loadData, closeMedicationModal]);
+  }, [newMedication, editingMedicationId, addMessage, loadData, closeMedicationModal, addNotification]);
 
   const getNextMedication = useCallback(() => {
     const now = new Date();
@@ -438,23 +577,40 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      try {
-        await apiService.deleteMedication(medicationId);
-        setAppState(prev => ({
-          ...prev,
-          medications: prev.medications.filter(med => med.id !== medicationId),
-          reminders: prev.reminders.filter(reminder => reminder.medicationId !== medicationId),
-        }));
-        addMessage('Medication and associated reminders deleted successfully', false);
-        // Refresh data to ensure consistency
-        await loadData();
-      } catch (error) {
-        console.error('Failed to delete medication:', error);
+    try {
+      await apiService.deleteMedication(medicationId);
+      setAppState(prev => ({
+        ...prev,
+        medications: prev.medications.filter(med => med.id !== medicationId),
+        reminders: prev.reminders.filter(reminder => reminder.medicationId !== medicationId)
+      }));
+      addMessage('Medication and associated reminders deleted successfully', false);
+      addNotification({
+        type: 'success',
+        title: 'Medication Deleted',
+        message: 'Medication and associated reminders have been removed.'
+      });
+      // Refresh data to ensure consistency
+      await loadData();
+    } catch (error: any) {
+      console.error('Failed to delete medication:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Deleted in Offline Mode',
+          message: 'Medication deleted from local database. Sync when backend is available.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Delete Failed',
+          message: 'Failed to delete medication. Please try again.'
+        });
         addMessage('Failed to delete medication. Please try again.', false);
       }
-    },
-    [addMessage, loadData]
-  );
+    }
+  }, [addMessage, loadData, addNotification]);
 
   // Symptom checking
   const checkSymptoms = useCallback(async () => {
@@ -474,8 +630,24 @@ const Dashboard: React.FC = () => {
       // Add a message to the chat as well
       const summaryMessage = `📋 Symptom Analysis Complete for: "${symptomCheck.symptoms}"\n\nCheck the Health Monitoring tab for detailed results.`;
       addMessage(summaryMessage, false);
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Symptom check error:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Analysis Completed Offline',
+          message: 'Symptom analysis completed using local database. Some features may be limited.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Analysis Failed',
+          message: 'Could not analyze symptoms. Please check your connection and try again.'
+        });
+      }
+      
       setSymptomResult({
         symptoms: symptomCheck.symptoms,
         analysis:
@@ -483,7 +655,7 @@ const Dashboard: React.FC = () => {
         timestamp: new Date().toISOString(),
       });
     }
-  }, [symptomCheck, addMessage]);
+  }, [symptomCheck, addMessage, addNotification]);
 
   // Emergency contacts
   const addEmergencyContact = useCallback(async () => {
@@ -499,11 +671,30 @@ const Dashboard: React.FC = () => {
         relationship: 'Doctor',
         is_primary: false,
       });
+      addNotification({
+        type: 'success',
+        title: 'Emergency Contact Added',
+        message: `${contact.name} has been added to your emergency contacts.`
+      });
       (document.getElementById('add-contact-modal') as HTMLDialogElement)?.close();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add emergency contact:', error);
+      
+      if (error.message?.includes('Supabase')) {
+        addNotification({
+          type: 'warning',
+          title: 'Contact Saved in Offline Mode',
+          message: 'Emergency contact saved directly to database. Sync when backend is available.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Failed to Add Contact',
+          message: 'Failed to add emergency contact. Please try again.'
+        });
+      }
     }
-  }, [newEmergencyContact]);
+  }, [newEmergencyContact, addNotification]);
 
   const triggerEmergency = useCallback(
     (contactId: string) => {
@@ -587,13 +778,6 @@ const Dashboard: React.FC = () => {
     storage.set(STORAGE_KEYS.THEME, newTheme);
   }, [appState.isDarkMode, updateState]);
 
-  const handleClearChat = useCallback(() => {
-    if (window.confirm('Clear chat history?')) {
-      updateState({ messages: [] });
-      storage.remove(STORAGE_KEYS.MESSAGES);
-    }
-  }, [updateState]);
-
   // Cleanup
   useEffect(() => {
     return () => {
@@ -616,6 +800,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <ConnectionStatus />
           <button
             onClick={() => navigate('/')}
             className="p-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800 transition-all"
@@ -963,135 +1148,95 @@ const Dashboard: React.FC = () => {
                 }}
                 className="flex-1 overflow-y-auto mb-6 custom-scrollbar"
               >
-                <div className="space-y-4">
-                  {appState.messages.length > 0 ? (
-                    appState.messages.map((message, index) => (
-                      <motion.div
-                        key={message.id}
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        transition={{
-                          type: 'spring',
-                          stiffness: 400,
-                          damping: 25,
-                          delay: index * 0.05,
-                        }}
-                        className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <motion.div
-                          whileHover={{ scale: 1.02, y: -2 }}
-                          className={`max-w-[80%] rounded-2xl px-6 py-4 shadow-lg backdrop-blur-sm border transition-all ${message.isUser ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30' : 'bg-white/95 dark:bg-slate-800/95 text-gray-800 dark:text-gray-200 border-gray-200/50 dark:border-slate-700/50'}`}
+                <motion.div
+                  whileHover={{ scale: 1.02, y: -2 }}
+                  className={`max-w-[80%] rounded-2xl px-6 py-4 shadow-lg backdrop-blur-sm border transition-all ${message.isUser ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30' : 'bg-white/95 dark:bg-slate-800/95 text-gray-800 dark:text-gray-200 border-gray-200/50 dark:border-slate-700/50'}`}
+                >
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+                  <div className="flex items-center justify-between mt-3 gap-3">
+                    <span className={`text-xs opacity-75 font-medium ${message.isUser ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                      {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {!message.isUser && message.audioUrl && !appState.isMuted && (
+                      <div className="flex items-center gap-2">
+                        <motion.button
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => {
+                            const isCurrentMessage = appState.currentAudioUrl === message.audioUrl;
+                            if (appState.isPaused && isCurrentMessage) {
+                              handlePauseResumeAudio();
+                            } else if (appState.isSpeaking && isCurrentMessage) {
+                              handlePauseResumeAudio();
+                            } else {
+                              handlePlayAudio(message.audioUrl!);
+                            }
+                          }}
+                          className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${
+                            appState.currentAudioUrl === message.audioUrl && appState.isPaused 
+                              ? 'bg-yellow-500 hover:bg-yellow-600' 
+                              : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking 
+                                ? 'bg-purple-500 hover:bg-purple-600' 
+                                : 'bg-blue-500 hover:bg-blue-600'
+                            }`}
+                          title={
+                            appState.currentAudioUrl === message.audioUrl && appState.isPaused 
+                              ? "Resume audio" 
+                              : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking 
+                                ? "Pause audio" 
+                                : "Play audio response"
+                          }
                         >
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                            {message.text}
-                          </p>
-                          <div className="flex items-center justify-between mt-3 gap-3">
-                            <span
-                              className={`text-xs opacity-75 font-medium ${message.isUser ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}
-                            >
-                              {new Date(message.timestamp).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                            {!message.isUser && message.audioUrl && !appState.isMuted && (
-                              <div className="flex items-center gap-2">
-                                <motion.button
-                                  whileHover={{ scale: 1.15 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  onClick={() => {
-                                    const isCurrentMessage =
-                                      appState.currentAudioUrl === message.audioUrl;
-                                    if (appState.isPaused && isCurrentMessage) {
-                                      handlePauseResumeAudio();
-                                    } else if (appState.isSpeaking && isCurrentMessage) {
-                                      handlePauseResumeAudio();
-                                    } else {
-                                      handlePlayAudio(message.audioUrl!);
-                                    }
-                                  }}
-                                  className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${
-                                    appState.currentAudioUrl === message.audioUrl &&
-                                    appState.isPaused
-                                      ? 'bg-yellow-500 hover:bg-yellow-600'
-                                      : appState.currentAudioUrl === message.audioUrl &&
-                                          appState.isSpeaking
-                                        ? 'bg-purple-500 hover:bg-purple-600'
-                                        : 'bg-blue-500 hover:bg-blue-600'
-                                  }`}
-                                  title={
-                                    appState.currentAudioUrl === message.audioUrl &&
-                                    appState.isPaused
-                                      ? 'Resume audio'
-                                      : appState.currentAudioUrl === message.audioUrl &&
-                                          appState.isSpeaking
-                                        ? 'Pause audio'
-                                        : 'Play audio response'
-                                  }
-                                >
-                                  {appState.currentAudioUrl === message.audioUrl &&
-                                  appState.isPaused ? (
-                                    <Play className="w-4 h-4" />
-                                  ) : appState.currentAudioUrl === message.audioUrl &&
-                                    appState.isSpeaking ? (
-                                    <motion.div
-                                      animate={{ scale: [1, 1.1, 1] }}
-                                      transition={{ duration: 0.8, repeat: Infinity }}
-                                    >
-                                      <Pause className="w-4 h-4" />
-                                    </motion.div>
-                                  ) : (
-                                    <Volume2 className="w-4 h-4" />
-                                  )}
-                                </motion.button>
-                                {appState.currentAudioUrl === message.audioUrl &&
-                                  (appState.isSpeaking || appState.isPaused) && (
-                                    <motion.button
-                                      initial={{ scale: 0, opacity: 0 }}
-                                      animate={{ scale: 1, opacity: 1 }}
-                                      exit={{ scale: 0, opacity: 0 }}
-                                      whileHover={{ scale: 1.1 }}
-                                      whileTap={{ scale: 0.9 }}
-                                      onClick={handleStopAudio}
-                                      className="p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg hover:shadow-xl"
-                                      title="Stop audio"
-                                    >
-                                      <Square className="w-3 h-3" />
-                                    </motion.button>
-                                  )}
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      </motion.div>
-                    ))
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                      <Bot className="w-16 h-16  mb-4 opacity-80 text-blue-700 dark:text-blue-300" />
-                      <p className="text-gray-500 dark:text-gray-400">
-                        Hi there! I'm Ava, your health assistant. How can I help you today?
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Voice Interface */}
-              <div className="flex flex-col items-center">
-                <VoiceInterface
-                  onStartListening={startListening}
-                  onStopListening={stopListening}
-                  onPauseAudio={handlePauseResumeAudio}
-                  onResumeAudio={handlePauseResumeAudio}
-                  isDisabled={appState.status === 'error'}
-                  isListening={appState.isListening}
-                  isSpeaking={appState.isSpeaking}
-                  isPaused={appState.isPaused}
-                  status={appState.status}
-                />
-                <StatusIndicator status={appState.status} />
-              </div>
-            </motion.section>
+                          {appState.currentAudioUrl === message.audioUrl && appState.isPaused ? (
+                            <Play className="w-4 h-4" />
+                          ) : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? (
+                            <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
+                              <Pause className="w-4 h-4" />
+                            </motion.div>
+                          ) : (
+                            <Volume2 className="w-4 h-4" />
+                          )}
+                        </motion.button>
+                        {appState.currentAudioUrl === message.audioUrl && (appState.isSpeaking || appState.isPaused) && (
+                          <motion.button
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={handleStopAudio}
+                            className="p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg hover:shadow-xl"
+                            title="Stop audio"
+                          >
+                            <Square className="w-3 h-3" />
+                          </motion.button>
+                        )}
+                      </div>
+                    )}
+                    {!message.isUser && message.audioUrl && appState.isMuted && (
+                      <div className="flex items-center gap-2">
+                        <motion.button
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => {
+                            alert('Audio is muted. Click the bell icon in the header to unmute and play audio.');
+                          }}
+                          className="p-2 rounded-full text-white bg-gray-400 hover:bg-gray-500 transition-colors shadow-lg hover:shadow-xl"
+                          title="Audio is muted - click bell icon to unmute"
+                        >
+                          <BellOff className="w-4 h-4" />
+                        </motion.button>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              </motion.div>
+            ))
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center py-12">
+              <Bot className="w-16 h-16  mb-4 opacity-80 text-blue-700 dark:text-blue-300" />
+              <p className="text-gray-500 dark:text-gray-400">Hi there! I'm Ava, your health assistant. How can I help you today?</p>
+            </div>
           )}
         </AnimatePresence>
 
