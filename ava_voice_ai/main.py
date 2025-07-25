@@ -619,19 +619,15 @@ async def check_symptoms(request: SymptomCheckRequest):
     
     try:
         # Construct focused prompt for direct medical analysis
-        # prompt = f"User reports: {request.symptoms}"
-      prompt = f"""You are a medical AI assistant. Provide a direct medical analysis and treatment recommendations for the following symptoms:
+        prompt = f"""You are a medical AI assistant. Provide a direct medical analysis and treatment recommendations for the following symptoms:
 
-# PATIENT REPORT:
-# - Symptoms: {request.symptoms}"""
-        
-
+PATIENT REPORT:
+- Symptoms: {request.symptoms}"""
         if request.severity:
             prompt += f"\n- Severity: {request.severity}"
         if request.duration:
             prompt += f"\n- Duration: {request.duration}"
-        # prompt += "\nProvide a professional medical assessment of possible causes and recommendations."
-
+            
         prompt += """
 
 Provide a DIRECT medical assessment with:
