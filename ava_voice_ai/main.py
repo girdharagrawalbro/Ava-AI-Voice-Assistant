@@ -16,7 +16,6 @@ import json
 from datetime import datetime, time
 import uuid
 
-
 # Set UTF-8 encoding for Windows
 if sys.platform.startswith('win'):
     import locale
@@ -33,6 +32,22 @@ sys.path.insert(0, str(project_root))
 from core.voice_input import VoiceInput
 from core.gemini_response import GeminiResponse
 from core.murf_tts import MurfTTS
+from config import Config
+from database import (
+    db_service, User, UserCreate, UserUpdate,
+    Medication, MedicationCreate, MedicationUpdate,
+    MedicationLog, MedicationLogCreate,
+    Reminder, ReminderCreate, ReminderUpdate,
+    EmergencyContact, EmergencyContactCreate, EmergencyContactUpdate,
+    HealthRecord, HealthRecordCreate,
+    SymptomCheck, SymptomCheckCreate,
+    ChatSession, ChatSessionCreate,
+    ChatMessage, ChatMessageCreate,
+    AudioFile, AudioFileCreate,
+    HealthTip, HealthTipCreate,
+    UserHealthTip, UserHealthTipCreate,
+    APIResponse, PaginatedResponse
+)
 
 # Initialize services
 voice_input: Optional[VoiceInput] = None
@@ -43,16 +58,19 @@ murf_tts: Optional[MurfTTS] = None
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize in-memory data stores (in production, use a database)
-medications_db = []
-reminders_db = []
-emergency_contacts_db = []
-health_tips_db = [
+# Initialize fallback data stores (used when database is not available)
+fallback_medications_db = []
+fallback_reminders_db = []
+fallback_emergency_contacts_db = []
+fallback_health_tips_db = [
     {"tip": "Drink at least 8 glasses of water daily"},
     {"tip": "Take short walks every hour if possible"},
     {"tip": "Get 7-8 hours of sleep each night"},
     {"tip": "Practice deep breathing exercises to reduce stress"}
 ]
+
+# Current user context (for single-user mode)
+current_user_id = Config.DEFAULT_USER_ID
 
 # Ensure audio directory exists
 @asynccontextmanager
@@ -118,7 +136,7 @@ audio_dir = os.path.join(os.path.dirname(__file__), "assets", "audio")
 os.makedirs(audio_dir, exist_ok=True)
 app.mount("/audio", StaticFiles(directory=audio_dir), name="audio")
 
-# Request/Response Models
+# Request/Response Models for API endpoints
 class VoiceRequest(BaseModel):
     timeout: int = 10
     phrase_time_limit: int = 15
@@ -133,34 +151,23 @@ class TTSRequest(BaseModel):
     style: Optional[str] = None
     speed: float = 1.0
 
-class APIResponse(BaseModel):
-    success: bool
-    data: Optional[Dict[Any, Any]] = None
-    message: Optional[str] = None
-    error: Optional[str] = None
-
-# Medication Management Models
-class Medication(BaseModel):
+# Legacy models for backward compatibility
+class LegacyMedication(BaseModel):
     name: str
     dosage: str
-    frequency: str  # e.g., "Once daily", "Twice daily", "Every 4 hours"
-    time: str       # e.g., "08:00", "20:00"
+    frequency: str
+    time: str
     notes: Optional[str] = None
 
-class MedicationResponse(Medication):
-    id: str
-    last_taken: Optional[datetime] = None
-    is_active: bool = True
-
-class Reminder(BaseModel):
+class LegacyReminder(BaseModel):
     title: str
     description: Optional[str] = None
     medicationId: str
-    schedule: str  # e.g., "08:00"
+    schedule: str
     is_recurring: bool = True
-    days_of_week: Optional[List[str]] = None  # ["Monday", "Wednesday", "Friday"]
+    days_of_week: Optional[List[str]] = None
 
-class EmergencyContact(BaseModel):
+class LegacyEmergencyContact(BaseModel):
     name: str
     phone: str
     relationship: str
@@ -168,8 +175,8 @@ class EmergencyContact(BaseModel):
 
 class SymptomCheckRequest(BaseModel):
     symptoms: str
-    severity: Optional[str] = None  # "mild", "moderate", "severe"
-    duration: Optional[str] = None  # e.g., "2 hours", "3 days"
+    severity: Optional[str] = None
+    duration: Optional[str] = None
 
 # API Endpoints
             
@@ -185,10 +192,22 @@ async def root():
 @app.get("/status")
 async def get_status():
     """Get service status"""
+    voice_status = voice_input.test_microphone() if voice_input else False
+    gemini_status = gemini_response.test_connection() if gemini_response else False
+    murf_status = murf_tts.test_connection() if murf_tts else False
+    
+    # Get database status
+    db_status = db_service.health_check()
+    
     status = {
-        "voice_input": voice_input.test_microphone() if voice_input else False,
-        "gemini_ai": gemini_response.test_connection() if gemini_response else False,
-        "murf_tts": murf_tts.test_connection() if murf_tts else False
+        "voice_input": voice_status,
+        "gemini_ai": gemini_status,
+        "murf_tts": murf_status,
+        "database": db_status,
+        "config": {
+            "database_configured": Config.is_database_configured(),
+            "current_user_id": current_user_id
+        }
     }
     
     return APIResponse(
@@ -377,81 +396,152 @@ async def stop_audio_playback():
 async def get_medications():
     """Get all medications"""
     try:
-        return APIResponse(
-            success=True,
-            data={"medications": medications_db},
-            message="Medications retrieved successfully"
-        )
+        if db_service.is_connected:
+            medications = await db_service.get_medications(current_user_id)
+            return APIResponse(
+                success=True,
+                data={"medications": [med.dict() for med in medications]},
+                message="Medications retrieved successfully"
+            )
+        else:
+            return APIResponse(
+                success=True,
+                data={"medications": fallback_medications_db},
+                message="Medications retrieved successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting medications: {str(e)}")
 
 @app.post("/api/medications", response_model=APIResponse)
-async def add_medication(medication: Medication):
+async def add_medication(medication: LegacyMedication):
     """Add a new medication"""
     try:
-        medication_id = str(uuid.uuid4())
-        new_med = MedicationResponse(
-            id=medication_id,
-            **medication.dict()
-        )
-        medications_db.append(new_med.dict())
-        
-        # Automatically create a reminder for this medication
-        try:
-            reminder_id = str(uuid.uuid4())
-            new_reminder = {
-                "id": reminder_id,
-                "title": f"Take {medication.name}",
-                "description": f"Time to take your {medication.dosage} of {medication.name}",
-                "medicationId": medication_id,
-                "schedule": medication.time,
-                "is_recurring": True,
-                "days_of_week": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        if db_service.is_connected:
+            medication_data = MedicationCreate(
+                user_id=current_user_id,
+                name=medication.name,
+                dosage=medication.dosage,
+                frequency=medication.frequency,
+                medication_time=medication.time,
+                notes=medication.notes
+            )
+            new_med = await db_service.create_medication(medication_data)
+            if new_med:
+                # Automatically create a reminder for this medication
+                try:
+                    reminder_data = ReminderCreate(
+                        user_id=current_user_id,
+                        medication_id=new_med.id,
+                        title=f"Take {medication.name}",
+                        description=f"Time to take your {medication.dosage} of {medication.name}",
+                        reminder_time=medication.time,
+                        reminder_type="medication"
+                    )
+                    await db_service.create_reminder(reminder_data)
+                except Exception as reminder_error:
+                    logger.warning(f"Failed to create automatic reminder: {reminder_error}")
+                
+                return APIResponse(
+                    success=True,
+                    data={"medication": new_med.dict()},
+                    message="Medication added successfully"
+                )
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create medication")
+        else:
+            # Fallback mode
+            medication_id = str(uuid.uuid4())
+            new_med = {
+                "id": medication_id,
+                "name": medication.name,
+                "dosage": medication.dosage,
+                "frequency": medication.frequency,
+                "time": medication.time,
+                "notes": medication.notes,
+                "last_taken": None,
+                "is_active": True
             }
-            reminders_db.append(new_reminder)
-        except Exception as reminder_error:
-            print(f"Warning: Failed to create automatic reminder: {reminder_error}")
-        
-        return APIResponse(
-            success=True,
-            data={"medication": new_med.dict()},
-            message="Medication added successfully"
-        )
+            fallback_medications_db.append(new_med)
+            
+            # Automatically create a reminder for this medication
+            try:
+                reminder_id = str(uuid.uuid4())
+                new_reminder = {
+                    "id": reminder_id,
+                    "title": f"Take {medication.name}",
+                    "description": f"Time to take your {medication.dosage} of {medication.name}",
+                    "medicationId": medication_id,
+                    "schedule": medication.time,
+                    "is_recurring": True,
+                    "days_of_week": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                }
+                fallback_reminders_db.append(new_reminder)
+            except Exception as reminder_error:
+                logger.warning(f"Failed to create automatic reminder: {reminder_error}")
+            
+            return APIResponse(
+                success=True,
+                data={"medication": new_med},
+                message="Medication added successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error adding medication: {str(e)}")
 
 @app.put("/api/medications/{medication_id}", response_model=APIResponse)
-async def update_medication(medication_id: str, medication: Medication):
+async def update_medication(medication_id: str, medication: LegacyMedication):
     """Update an existing medication"""
     try:
-        for idx, med in enumerate(medications_db):
-            if med["id"] == medication_id:
-                updated_med = MedicationResponse(
-                    id=medication_id,
-                    **medication.dict(),
-                    last_taken=med.get("last_taken"),
-                    is_active=med.get("is_active", True)
-                )
-                medications_db[idx] = updated_med.dict()
-                
-                # Update associated reminders
-                try:
-                    for reminder_idx, reminder in enumerate(reminders_db):
-                        if reminder.get("medicationId") == medication_id:
-                            reminders_db[reminder_idx].update({
-                                "title": f"Take {medication.name}",
-                                "description": f"Time to take your {medication.dosage} of {medication.name}",
-                                "schedule": medication.time
-                            })
-                except Exception as reminder_error:
-                    print(f"Warning: Failed to update automatic reminders: {reminder_error}")
-                
+        if db_service.is_connected:
+            medication_data = MedicationUpdate(
+                name=medication.name,
+                dosage=medication.dosage,
+                frequency=medication.frequency,
+                medication_time=medication.time,
+                notes=medication.notes
+            )
+            updated_med = await db_service.update_medication(medication_id, medication_data)
+            if updated_med:
                 return APIResponse(
                     success=True,
                     data={"medication": updated_med.dict()},
                     message="Medication updated successfully"
                 )
-        raise HTTPException(status_code=404, detail="Medication not found")
+            else:
+                raise HTTPException(status_code=404, detail="Medication not found")
+        else:
+            # Fallback mode
+            for idx, med in enumerate(fallback_medications_db):
+                if med["id"] == medication_id:
+                    updated_med = {
+                        "id": medication_id,
+                        "name": medication.name,
+                        "dosage": medication.dosage,
+                        "frequency": medication.frequency,
+                        "time": medication.time,
+                        "notes": medication.notes,
+                        "last_taken": med.get("last_taken"),
+                        "is_active": med.get("is_active", True)
+                    }
+                    fallback_medications_db[idx] = updated_med
+                    
+                    # Update associated reminders
+                    try:
+                        for reminder_idx, reminder in enumerate(fallback_reminders_db):
+                            if reminder.get("medicationId") == medication_id:
+                                fallback_reminders_db[reminder_idx].update({
+                                    "title": f"Take {medication.name}",
+                                    "description": f"Time to take your {medication.dosage} of {medication.name}",
+                                    "schedule": medication.time
+                                })
+                    except Exception as reminder_error:
+                        logger.warning(f"Failed to update automatic reminders: {reminder_error}")
+                    
+                    return APIResponse(
+                        success=True,
+                        data={"medication": updated_med},
+                        message="Medication updated successfully (fallback mode)"
+                    )
+            raise HTTPException(status_code=404, detail="Medication not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating medication: {str(e)}")
 
@@ -459,21 +549,37 @@ async def update_medication(medication_id: str, medication: Medication):
 async def delete_medication(medication_id: str):
     """Delete a medication"""
     try:
-        global medications_db
-        
-        # First delete associated reminders
-        try:
-            global reminders_db
-            reminders_db = [reminder for reminder in reminders_db if reminder.get("medicationId") != medication_id]
-        except Exception as reminder_error:
-            print(f"Warning: Failed to delete automatic reminders: {reminder_error}")
-        
-        # Then delete the medication
-        medications_db = [med for med in medications_db if med["id"] != medication_id]
-        return APIResponse(
-            success=True,
-            message="Medication deleted successfully"
-        )
+        if db_service.is_connected:
+            # Delete the medication (soft delete)
+            success = await db_service.delete_medication(medication_id)
+            if success:
+                return APIResponse(
+                    success=True,
+                    message="Medication deleted successfully"
+                )
+            else:
+                raise HTTPException(status_code=404, detail="Medication not found")
+        else:
+            # Fallback mode
+            global fallback_medications_db, fallback_reminders_db
+            
+            # First delete associated reminders
+            try:
+                fallback_reminders_db = [reminder for reminder in fallback_reminders_db if reminder.get("medicationId") != medication_id]
+            except Exception as reminder_error:
+                logger.warning(f"Failed to delete automatic reminders: {reminder_error}")
+            
+            # Then delete the medication
+            original_count = len(fallback_medications_db)
+            fallback_medications_db = [med for med in fallback_medications_db if med["id"] != medication_id]
+            
+            if len(fallback_medications_db) < original_count:
+                return APIResponse(
+                    success=True,
+                    message="Medication deleted successfully (fallback mode)"
+                )
+            else:
+                raise HTTPException(status_code=404, detail="Medication not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting medication: {str(e)}")
 
@@ -482,11 +588,19 @@ async def delete_medication(medication_id: str):
 async def get_reminders():
     """Get all reminders"""
     try:
-        return APIResponse(
-            success=True,
-            data={"reminders": reminders_db},
-            message="Reminders retrieved successfully"
-        )
+        if db_service.is_connected:
+            reminders = await db_service.get_reminders(current_user_id)
+            return APIResponse(
+                success=True,
+                data={"reminders": [reminder.dict() for reminder in reminders]},
+                message="Reminders retrieved successfully"
+            )
+        else:
+            return APIResponse(
+                success=True,
+                data={"reminders": fallback_reminders_db},
+                message="Reminders retrieved successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting reminders: {str(e)}")
 
@@ -494,59 +608,107 @@ async def get_reminders():
 async def get_reminders_by_medication(medication_id: str):
     """Get reminders for a specific medication"""
     try:
-        medication_reminders = [reminder for reminder in reminders_db if reminder.get("medicationId") == medication_id]
-        return APIResponse(
-            success=True,
-            data={"reminders": medication_reminders},
-            message="Medication reminders retrieved successfully"
-        )
+        if db_service.is_connected:
+            reminders = await db_service.get_reminders(current_user_id)
+            medication_reminders = [r for r in reminders if r.medication_id == medication_id]
+            return APIResponse(
+                success=True,
+                data={"reminders": [reminder.dict() for reminder in medication_reminders]},
+                message="Medication reminders retrieved successfully"
+            )
+        else:
+            medication_reminders = [reminder for reminder in fallback_reminders_db if reminder.get("medicationId") == medication_id]
+            return APIResponse(
+                success=True,
+                data={"reminders": medication_reminders},
+                message="Medication reminders retrieved successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting medication reminders: {str(e)}")
 
 @app.post("/api/reminders", response_model=APIResponse)
-async def add_reminder(reminder: Reminder):
+async def add_reminder(reminder: LegacyReminder):
     """Add a new reminder"""
     try:
-        reminder_id = str(uuid.uuid4())
-        new_reminder = {
-            "id": reminder_id,
-            **reminder.dict()
-        }
-        reminders_db.append(new_reminder)
-        return APIResponse(
-            success=True,
-            data={"reminder": new_reminder},
-            message="Reminder added successfully"
-        )
+        if db_service.is_connected:
+            reminder_data = ReminderCreate(
+                user_id=current_user_id,
+                medication_id=reminder.medicationId if reminder.medicationId else None,
+                title=reminder.title,
+                description=reminder.description,
+                reminder_time=reminder.schedule,
+                is_recurring=reminder.is_recurring,
+                days_of_week=reminder.days_of_week,
+                reminder_type="medication" if reminder.medicationId else "general"
+            )
+            new_reminder = await db_service.create_reminder(reminder_data)
+            if new_reminder:
+                return APIResponse(
+                    success=True,
+                    data={"reminder": new_reminder.dict()},
+                    message="Reminder added successfully"
+                )
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create reminder")
+        else:
+            reminder_id = str(uuid.uuid4())
+            new_reminder = {
+                "id": reminder_id,
+                **reminder.dict()
+            }
+            fallback_reminders_db.append(new_reminder)
+            return APIResponse(
+                success=True,
+                data={"reminder": new_reminder},
+                message="Reminder added successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error adding reminder: {str(e)}")
 
 @app.put("/api/reminders/{reminder_id}", response_model=APIResponse)
-async def update_reminder(reminder_id: str, reminder: Reminder):
+async def update_reminder(reminder_id: str, reminder: LegacyReminder):
     """Update an existing reminder"""
     try:
-        # Find the reminder in the database
-        reminder_index = None
-        for i, r in enumerate(reminders_db):
-            if r["id"] == reminder_id:
-                reminder_index = i
-                break
-        
-        if reminder_index is None:
-            raise HTTPException(status_code=404, detail="Reminder not found")
-        
-        # Update the reminder
-        updated_reminder = {
-            "id": reminder_id,
-            **reminder.dict()
-        }
-        reminders_db[reminder_index] = updated_reminder
-        
-        return APIResponse(
-            success=True,
-            data={"reminder": updated_reminder},
-            message="Reminder updated successfully"
-        )
+        if db_service.is_connected:
+            reminder_data = ReminderUpdate(
+                title=reminder.title,
+                description=reminder.description,
+                reminder_time=reminder.schedule,
+                is_recurring=reminder.is_recurring,
+                days_of_week=reminder.days_of_week
+            )
+            updated_reminder = await db_service.update_reminder(reminder_id, reminder_data)
+            if updated_reminder:
+                return APIResponse(
+                    success=True,
+                    data={"reminder": updated_reminder.dict()},
+                    message="Reminder updated successfully"
+                )
+            else:
+                raise HTTPException(status_code=404, detail="Reminder not found")
+        else:
+            # Fallback mode
+            reminder_index = None
+            for i, r in enumerate(fallback_reminders_db):
+                if r["id"] == reminder_id:
+                    reminder_index = i
+                    break
+            
+            if reminder_index is None:
+                raise HTTPException(status_code=404, detail="Reminder not found")
+            
+            # Update the reminder
+            updated_reminder = {
+                "id": reminder_id,
+                **reminder.dict()
+            }
+            fallback_reminders_db[reminder_index] = updated_reminder
+            
+            return APIResponse(
+                success=True,
+                data={"reminder": updated_reminder},
+                message="Reminder updated successfully (fallback mode)"
+            )
     except HTTPException:
         raise
     except Exception as e:
@@ -556,57 +718,89 @@ async def update_reminder(reminder_id: str, reminder: Reminder):
 async def delete_reminder(reminder_id: str):
     """Delete an existing reminder"""
     try:
-        # Find the reminder in the database
-        reminder_index = None
-        for i, r in enumerate(reminders_db):
-            if r["id"] == reminder_id:
-                reminder_index = i
-                break
-        
-        if reminder_index is None:
-            raise HTTPException(status_code=404, detail="Reminder not found")
-        
-        # Remove the reminder
-        deleted_reminder = reminders_db.pop(reminder_index)
-        
-        return APIResponse(
-            success=True,
-            data={"reminder": deleted_reminder},
-            message="Reminder deleted successfully"
-        )
+        if db_service.is_connected:
+            success = await db_service.delete_reminder(reminder_id)
+            if success:
+                return APIResponse(
+                    success=True,
+                    message="Reminder deleted successfully"
+                )
+            else:
+                raise HTTPException(status_code=404, detail="Reminder not found")
+        else:
+            # Fallback mode
+            reminder_index = None
+            for i, r in enumerate(fallback_reminders_db):
+                if r["id"] == reminder_id:
+                    reminder_index = i
+                    break
+            
+            if reminder_index is None:
+                raise HTTPException(status_code=404, detail="Reminder not found")
+            
+            # Remove the reminder
+            deleted_reminder = fallback_reminders_db.pop(reminder_index)
+            
+            return APIResponse(
+                success=True,
+                data={"reminder": deleted_reminder},
+                message="Reminder deleted successfully (fallback mode)"
+            )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting reminder: {str(e)}")
         
-# Emergency Contact Endpoints
 @app.get("/api/emergency-contacts", response_model=APIResponse)
 async def get_emergency_contacts():
     """Get all emergency contacts"""
     try:
-        return APIResponse(
-            success=True,
-            data={"contacts": emergency_contacts_db},
-            message="Emergency contacts retrieved successfully"
-        )
+        if db_service.is_connected:
+            contacts = await db_service.get_emergency_contacts(current_user_id)
+            return APIResponse(
+                success=True,
+                data={"contacts": [contact.dict() for contact in contacts]},
+                message="Emergency contacts retrieved successfully"
+            )
+        else:
+            return APIResponse(
+                success=True,
+                data={"contacts": fallback_emergency_contacts_db},
+                message="Emergency contacts retrieved successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting emergency contacts: {str(e)}")
 
 @app.post("/api/emergency-contacts", response_model=APIResponse)
-async def add_emergency_contact(contact: EmergencyContact):
+async def add_emergency_contact(contact: LegacyEmergencyContact):
     """Add a new emergency contact"""
     try:
-        contact_id = str(uuid.uuid4())
-        new_contact = {
-            "id": contact_id,
-            **contact.dict()
-        }
-        emergency_contacts_db.append(new_contact)
-        return APIResponse(
-            success=True,
-            data={"contact": new_contact},
-            message="Emergency contact added successfully"
-        )
+        if db_service.is_connected:
+            contact_data = EmergencyContactCreate(
+                user_id=current_user_id,
+                **contact.dict()
+            )
+            new_contact = await db_service.create_emergency_contact(contact_data)
+            if new_contact:
+                return APIResponse(
+                    success=True,
+                    data={"contact": new_contact.dict()},
+                    message="Emergency contact added successfully"
+                )
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create emergency contact")
+        else:
+            contact_id = str(uuid.uuid4())
+            new_contact = {
+                "id": contact_id,
+                **contact.dict()
+            }
+            fallback_emergency_contacts_db.append(new_contact)
+            return APIResponse(
+                success=True,
+                data={"contact": new_contact},
+                message="Emergency contact added successfully (fallback mode)"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error adding emergency contact: {str(e)}")
 
@@ -743,7 +937,7 @@ async def get_health_tips(count: int = Query(3, ge=1, le=10)):
     logger.info(f"Using backup tips. Gemini failed: {gemini_failed}, Error: {gemini_error}")
     
     try:
-        tips = health_tips_db[:count]
+        tips = fallback_health_tips_db[:count]
         return APIResponse(
             success=True,
             data={"tips": tips},
