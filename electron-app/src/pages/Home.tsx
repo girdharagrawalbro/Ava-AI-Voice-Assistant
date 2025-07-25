@@ -88,19 +88,19 @@ const Home: React.FC = () => {
             transition={{ duration: 0.8, delay: 0.8 }}
             className="flex flex-wrap justify-center gap-4 mb-12"
           >
-            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <Mic2 className="w-4 h-4 text-blue-500" />
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Voice Recognition</span>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <Volume2 className="w-4 h-4 text-purple-500" />
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Speech</span>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <MessageCircle className="w-4 h-4 text-green-500" />
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Natural Conversation</span>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-full border border-gray-200/50 dark:border-slate-700/50 shadow-lg hover:scale-105 transition-transform duration-300">
               <Sparkles className="w-4 h-4 text-indigo-500" />
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Smart Responses</span>
             </div>
