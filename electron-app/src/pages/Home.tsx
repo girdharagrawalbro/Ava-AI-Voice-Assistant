@@ -1,10 +1,36 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Mic2, Bot, Sparkles, ArrowRight, Volume2, MessageCircle } from 'lucide-react';
+import Header from '../components/Header';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Constants
+  const THEMES = { LIGHT: 'light', DARK: 'dark' };
+  const STORAGE_KEYS = { THEME: 'ava-theme' };
+
+  // Storage utility
+  const storage = {
+    get: (key: string) => {
+      try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : null;
+      } catch {
+        return null;
+      }
+    },
+    set: (key: string, value: any) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch {
+        // Handle storage errors
+      }
+    },
+  };
 
   const handleGetStarted = () => {
     navigate('/dashboard');
@@ -12,23 +38,26 @@ const Home: React.FC = () => {
 
   // Set dark mode as default for Home page too
   useEffect(() => {
-    const THEMES = { LIGHT: 'light', DARK: 'dark' };
-    const STORAGE_KEYS = { THEME: 'ava-theme' };
-
-    const storage = {
-      get: (key: string) => {
-        try {
-          const item = localStorage.getItem(key);
-          return item ? JSON.parse(item) : null;
-        } catch {
-          return null;
-        }
-      },
-    };
-
     const savedTheme = storage.get(STORAGE_KEYS.THEME) || THEMES.DARK;
     document.documentElement.setAttribute('data-theme', savedTheme);
+    setIsDarkMode(savedTheme === THEMES.DARK);
   }, []);
+
+  const handleToggleTheme = () => {
+    const newTheme = isDarkMode ? THEMES.LIGHT : THEMES.DARK;
+    setIsDarkMode(!isDarkMode);
+    document.documentElement.setAttribute('data-theme', newTheme);
+    storage.set(STORAGE_KEYS.THEME, newTheme);
+  };
+
+  const handleToggleMute = () => {
+    setIsMuted(!isMuted);
+  };
+
+  const handleEmergency = () => {
+    alert('Emergency feature - redirecting to dashboard for full functionality');
+    navigate('/dashboard');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-950">
@@ -55,25 +84,17 @@ const Home: React.FC = () => {
       </div>
 
       {/* Header */}
-      <header className="relative z-10 p-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="flex items-center gap-3"
-        >
-          <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
-            <Bot className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">AVA</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">AI Voice Assistant</p>
-          </div>
-        </motion.div>
-      </header>
+      <Header
+        showControls={true}
+        isDarkMode={isDarkMode}
+        isMuted={isMuted}
+        onToggleTheme={handleToggleTheme}
+        onToggleMute={handleToggleMute}
+        onEmergency={handleEmergency}
+      />
 
       {/* Main Content */}
-      <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-120px)] px-8">
+      <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-120px)] px-8 pt-3">
         {/* Hero Section */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
