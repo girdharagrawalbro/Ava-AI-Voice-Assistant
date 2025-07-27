@@ -91,6 +91,7 @@ const Home: React.FC = () => {
         onToggleTheme={handleToggleTheme}
         onToggleMute={handleToggleMute}
         onEmergency={handleEmergency}
+        isHomePage={true}
       />
 
       {/* Main Content */}

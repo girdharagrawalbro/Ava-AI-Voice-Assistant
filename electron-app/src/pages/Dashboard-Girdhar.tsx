@@ -557,40 +557,40 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-    try {
-      await apiService.deleteMedication(medicationId);
-      setAppState(prev => ({
-        ...prev,
-        medications: prev.medications.filter(med => med.id !== medicationId),
-        reminders: prev.reminders.filter(reminder => reminder.medicationId !== medicationId)
-      }));
-      addMessage('Medication and associated reminders deleted successfully', false);
-      addNotification({
-        type: 'success',
-        title: 'Medication Deleted',
-        message: 'Medication and associated reminders have been removed.'
-      });
-      // Refresh data to ensure consistency
-      await loadData();
-    } catch (error: any) {
-      console.error('Failed to delete medication:', error);
+      try {
+        await apiService.deleteMedication(medicationId);
+        setAppState(prev => ({
+          ...prev,
+          medications: prev.medications.filter(med => med.id !== medicationId),
+          reminders: prev.reminders.filter(reminder => reminder.medicationId !== medicationId)
+        }));
+        addMessage('Medication and associated reminders deleted successfully', false);
+        addNotification({
+          type: 'success',
+          title: 'Medication Deleted',
+          message: 'Medication and associated reminders have been removed.'
+        });
+        // Refresh data to ensure consistency
+        await loadData();
+      } catch (error: any) {
+        console.error('Failed to delete medication:', error);
 
-      if (error.message?.includes('Supabase')) {
-        addNotification({
-          type: 'warning',
-          title: 'Deleted in Offline Mode',
-          message: 'Medication deleted from local database. Sync when backend is available.'
-        });
-      } else {
-        addNotification({
-          type: 'error',
-          title: 'Delete Failed',
-          message: 'Failed to delete medication. Please try again.'
-        });
-        addMessage('Failed to delete medication. Please try again.', false);
+        if (error.message?.includes('Supabase')) {
+          addNotification({
+            type: 'warning',
+            title: 'Deleted in Offline Mode',
+            message: 'Medication deleted from local database. Sync when backend is available.'
+          });
+        } else {
+          addNotification({
+            type: 'error',
+            title: 'Delete Failed',
+            message: 'Failed to delete medication. Please try again.'
+          });
+          addMessage('Failed to delete medication. Please try again.', false);
+        }
       }
-    }
-  }, [addMessage, loadData, addNotification]);
+    }, [addMessage, loadData, addNotification]);
 
   // Symptom checking
   const checkSymptoms = useCallback(async () => {
@@ -761,7 +761,7 @@ const Dashboard: React.FC = () => {
   // Cleanup
   useEffect(() => {
     return () => {
-      if (abortControllerRef.current) abortControllerRef.current.abort();
+        if (abortControllerRef.current) abortControllerRef.current.abort();
       if (appState.currentAudio) stopAudio(appState.currentAudio);
     };
   }, [appState.currentAudio]);
@@ -769,7 +769,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-950 transition-colors duration-300">
       {/* Header */}
-      <Header 
+      <Header
         showControls={true}
         isDarkMode={appState.isDarkMode}
         isMuted={appState.isMuted}
@@ -1074,148 +1074,147 @@ const Dashboard: React.FC = () => {
         </AnimatePresence>
 
         {/* Chat Panel */}
-       <AnimatePresence>
-  {activeTab === 'chat' && (
-    <motion.section
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      transition={{ duration: 0.2 }}
-      className="flex-1 flex flex-col p-6 overflow-hidden"
-    >
-      <h2 className="text-xl font-semibold text-green-700 dark:text-green-300 mb-6">Chat with Ava</h2>
+        <AnimatePresence>
+          {activeTab === 'chat' && (
+            <motion.section
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 flex flex-col p-6 overflow-hidden"
+            >
+              <h2 className="text-xl font-semibold text-green-700 dark:text-green-300 mb-6">Chat with Ava</h2>
 
-      {/* Chat Messages */}
-      <div 
-        ref={(node) => {
-          if (node) {
-            // This will keep the scroll at the bottom when new messages arrive
-            node.scrollTop = node.scrollHeight;
-          }
-        }}
-        className="flex-1 overflow-y-auto mb-6 custom-scrollbar"
-      >
-        <div className="space-y-4">
-          {appState.messages.length > 0 ? (
-            appState.messages.map((message, index) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: "spring", stiffness: 400, damping: 25, delay: index * 0.05 }}
-                className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+              {/* Chat Messages */}
+              <div
+                ref={(node) => {
+                  if (node) {
+                    // This will keep the scroll at the bottom when new messages arrive
+                    node.scrollTop = node.scrollHeight;
+                  }
+                }}
+                className="flex-1 overflow-y-auto mb-6 custom-scrollbar"
               >
-                <motion.div
-                  whileHover={{ scale: 1.02, y: -2 }}
-                  className={`max-w-[80%] rounded-2xl px-6 py-4 shadow-lg backdrop-blur-sm border transition-all ${message.isUser ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30' : 'bg-white/95 dark:bg-slate-800/95 text-gray-800 dark:text-gray-200 border-gray-200/50 dark:border-slate-700/50'}`}
-                >
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
-                  <div className="flex items-center justify-between mt-3 gap-3">
-                    <span className={`text-xs opacity-75 font-medium ${message.isUser ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
-                      {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    {!message.isUser && message.audioUrl && !appState.isMuted && (
-                      <div className="flex items-center gap-2">
-                        <motion.button
-                          whileHover={{ scale: 1.15 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => {
-                            const isCurrentMessage = appState.currentAudioUrl === message.audioUrl;
-                            if (appState.isPaused && isCurrentMessage) {
-                              handlePauseResumeAudio();
-                            } else if (appState.isSpeaking && isCurrentMessage) {
-                              handlePauseResumeAudio();
-                            } else {
-                              handlePlayAudio(message.audioUrl!);
-                            }
-                          }}
-                          className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${
-                            appState.currentAudioUrl === message.audioUrl && appState.isPaused 
-                              ? 'bg-yellow-500 hover:bg-yellow-600' 
-                              : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking 
-                                ? 'bg-purple-500 hover:bg-purple-600' 
-                                : 'bg-blue-500 hover:bg-blue-600'
-                            }`}
-                          title={
-                            appState.currentAudioUrl === message.audioUrl && appState.isPaused 
-                              ? "Resume audio" 
-                              : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking 
-                                ? "Pause audio" 
-                                : "Play audio response"
-                          }
+                <div className="space-y-4">
+                  {appState.messages.length > 0 ? (
+                    appState.messages.map((message, index) => (
+                      <motion.div
+                        key={message.id}
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 25, delay: index * 0.05 }}
+                        className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <motion.div
+                          whileHover={{ scale: 1.02, y: -2 }}
+                          className={`max-w-[80%] rounded-2xl px-6 py-4 shadow-lg backdrop-blur-sm border transition-all ${message.isUser ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400/30' : 'bg-white/95 dark:bg-slate-800/95 text-gray-800 dark:text-gray-200 border-gray-200/50 dark:border-slate-700/50'}`}
                         >
-                          {appState.currentAudioUrl === message.audioUrl && appState.isPaused ? (
-                            <Play className="w-4 h-4" />
-                          ) : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? (
-                            <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
-                              <Pause className="w-4 h-4" />
-                            </motion.div>
-                          ) : (
-                            <Volume2 className="w-4 h-4" />
-                          )}
-                        </motion.button>
-                        {appState.currentAudioUrl === message.audioUrl && (appState.isSpeaking || appState.isPaused) && (
-                          <motion.button
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0, opacity: 0 }}
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={handleStopAudio}
-                            className="p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg hover:shadow-xl"
-                            title="Stop audio"
-                          >
-                            <Square className="w-3 h-3" />
-                          </motion.button>
-                        )}
-                      </div>
-                    )}
-                    {!message.isUser && message.audioUrl && appState.isMuted && (
-                      <div className="flex items-center gap-2">
-                        <motion.button
-                          whileHover={{ scale: 1.15 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => {
-                            alert('Audio is muted. Click the bell icon in the header to unmute and play audio.');
-                          }}
-                          className="p-2 rounded-full text-white bg-gray-400 hover:bg-gray-500 transition-colors shadow-lg hover:shadow-xl"
-                          title="Audio is muted - click bell icon to unmute"
-                        >
-                          <BellOff className="w-4 h-4" />
-                        </motion.button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </motion.div>
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center py-12">
-              <Bot className="w-16 h-16  mb-4 opacity-80 text-blue-700 dark:text-blue-300" />
-              <p className="text-gray-500 dark:text-gray-400">Hi there! I'm Ava, your health assistant. How can I help you today?</p>
-            </div>
-          )}
-        </div>
-      </div>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+                          <div className="flex items-center justify-between mt-3 gap-3">
+                            <span className={`text-xs opacity-75 font-medium ${message.isUser ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {!message.isUser && message.audioUrl && !appState.isMuted && (
+                              <div className="flex items-center gap-2">
+                                <motion.button
+                                  whileHover={{ scale: 1.15 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => {
+                                    const isCurrentMessage = appState.currentAudioUrl === message.audioUrl;
+                                    if (appState.isPaused && isCurrentMessage) {
+                                      handlePauseResumeAudio();
+                                    } else if (appState.isSpeaking && isCurrentMessage) {
+                                      handlePauseResumeAudio();
+                                    } else {
+                                      handlePlayAudio(message.audioUrl!);
+                                    }
+                                  }}
+                                  className={`p-2 rounded-full text-white transition-colors shadow-lg hover:shadow-xl ${appState.currentAudioUrl === message.audioUrl && appState.isPaused
+                                    ? 'bg-yellow-500 hover:bg-yellow-600'
+                                    : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking
+                                      ? 'bg-purple-500 hover:bg-purple-600'
+                                      : 'bg-blue-500 hover:bg-blue-600'
+                                    }`}
+                                  title={
+                                    appState.currentAudioUrl === message.audioUrl && appState.isPaused
+                                      ? "Resume audio"
+                                      : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking
+                                        ? "Pause audio"
+                                        : "Play audio response"
+                                  }
+                                >
+                                  {appState.currentAudioUrl === message.audioUrl && appState.isPaused ? (
+                                    <Play className="w-4 h-4" />
+                                  ) : appState.currentAudioUrl === message.audioUrl && appState.isSpeaking ? (
+                                    <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
+                                      <Pause className="w-4 h-4" />
+                                    </motion.div>
+                                  ) : (
+                                    <Volume2 className="w-4 h-4" />
+                                  )}
+                                </motion.button>
+                                {appState.currentAudioUrl === message.audioUrl && (appState.isSpeaking || appState.isPaused) && (
+                                  <motion.button
+                                    initial={{ scale: 0, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={{ scale: 0, opacity: 0 }}
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={handleStopAudio}
+                                    className="p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg hover:shadow-xl"
+                                    title="Stop audio"
+                                  >
+                                    <Square className="w-3 h-3" />
+                                  </motion.button>
+                                )}
+                              </div>
+                            )}
+                            {!message.isUser && message.audioUrl && appState.isMuted && (
+                              <div className="flex items-center gap-2">
+                                <motion.button
+                                  whileHover={{ scale: 1.15 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => {
+                                    alert('Audio is muted. Click the bell icon in the header to unmute and play audio.');
+                                  }}
+                                  className="p-2 rounded-full text-white bg-gray-400 hover:bg-gray-500 transition-colors shadow-lg hover:shadow-xl"
+                                  title="Audio is muted - click bell icon to unmute"
+                                >
+                                  <BellOff className="w-4 h-4" />
+                                </motion.button>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                      <Bot className="w-16 h-16  mb-4 opacity-80 text-blue-700 dark:text-blue-300" />
+                      <p className="text-gray-500 dark:text-gray-400">Hi there! I'm Ava, your health assistant. How can I help you today?</p>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-      {/* Voice Interface */}
-      <div className="flex flex-col items-center">
-        <VoiceInterface
-          onStartListening={startListening}
-          onStopListening={stopListening}
-          onPauseAudio={handlePauseResumeAudio}
-          onResumeAudio={handlePauseResumeAudio}
-          isDisabled={appState.status === 'error'}
-          isListening={appState.isListening}
-          isSpeaking={appState.isSpeaking}
-          isPaused={appState.isPaused}
-          status={appState.status}
-        />
-        <StatusIndicator status={appState.status} />
-      </div>
-    </motion.section>got 
-  )}
-</AnimatePresence>
+              {/* Voice Interface */}
+              <div className="flex flex-col items-center">
+                <VoiceInterface
+                  onStartListening={startListening}
+                  onStopListening={stopListening}
+                  onPauseAudio={handlePauseResumeAudio}
+                  onResumeAudio={handlePauseResumeAudio}
+                  isDisabled={appState.status === 'error'}
+                  isListening={appState.isListening}
+                  isSpeaking={appState.isSpeaking}
+                  isPaused={appState.isPaused}
+                  status={appState.status}
+                />
+                <StatusIndicator status={appState.status} />
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
 
         {/* Add/Edit Medication Modal */}
         <dialog
@@ -1242,8 +1241,7 @@ const Dashboard: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Dosage
               </label>
-              <input
-                type="text"
+              <input type="text"
                 value={newMedication.dosage}
                 onChange={e => setNewMedication(prev => ({ ...prev, dosage: e.target.value }))}
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200"
